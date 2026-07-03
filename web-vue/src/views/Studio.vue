@@ -1245,16 +1245,21 @@ function mergeImageTasks(items: ImageTask[]) {
 function markMissingImageTasks(taskIds: string[]) {
   const missing = new Set(taskIds.filter(Boolean))
   if (!missing.size) return
+
+  // 标记会话消息为 error
   conversations.value.forEach((conversation) => {
     conversation.messages.forEach((message) => {
       if (!message.taskId || !missing.has(message.taskId)) return
       if (message.status === 'done' || message.status === 'error') return
       message.status = 'error'
-      message.error = '图片任务已过期或不存在'
+      message.error = '此图片已删除'
       touchConversation(conversation)
       markConversationNotice(conversation.id, 'error')
     })
   })
+
+  // 从 imageTasks 移除已删除的任务
+  imageTasks.value = imageTasks.value.filter(task => !missing.has(task.id))
 }
 
 function syncImageMessageStatuses() {
