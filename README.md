@@ -12,21 +12,13 @@
   <img src="https://img.shields.io/badge/Vite-7-646CFF?logo=vite&logoColor=white" />
   <img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white" />
 </p>
-<p align="center"><strong>当前稳定版本：v2.6.0</strong> | <a href="https://github.com/yukkcat/chatgpt2api/releases/tag/v2.6.0">发布说明</a> | <a href="https://github.com/yukkcat/chatgpt2api/releases">全部版本</a></p>
-
----
-
-## 联系我们
-
-点击链接加入群聊【gemini/gpt-2API 交流群】：
-
-- [https://qm.qq.com/q/yegwCqJisS](https://qm.qq.com/q/yegwCqJisS)
+<p align="center"><strong>当前稳定版本：v2.7.0</strong> | <a href="https://github.com/hearthealt/chatgpt2api/releases/tag/v2.7.0">发布说明</a> | <a href="https://github.com/hearthealt/chatgpt2api/releases">全部版本</a></p>
 
 ---
 
 ## 项目定位
 
-本仓库基于原版 [basketikun/chatgpt2api](https://github.com/basketikun/chatgpt2api) 整理维护，核心仍是把 ChatGPT 官网能力封装为 OpenAI 兼容 API。
+本仓库基于原版 [yukkcat/chatgpt2api](https://github.com/yukkcat/chatgpt2api) 整理维护，核心仍是把 ChatGPT 官网能力封装为 OpenAI 兼容 API。
 
 本版本使用新的 Vue 控制台，主题和交互与原版前端不同；除前端实现差异外，接口、配置和部署口径会尽量保持与原版一致。
 
@@ -43,7 +35,8 @@
 - 远程账号导入：支持本地 CPA JSON、远程 CPA、Sub2API、access token 导入；Sub2API / CPA 可按远程分组折叠选择、全组选中、去重和批量导入。
 - 注册账号链路：支持临时邮箱、GPTMail、Outlook Token 邮箱池和 Microsoft plus alias，提供验证码等待、注册进度、邮箱池状态和实时日志。
 - 代理与稳定出口：支持账号代理、账号组代理、多出口代理组、备用出口、WARP / Privoxy / FlareSolverr 稳定代理运行时和 Cloudflare clearance 测试。
-- 管理控制台：包含概览中心、账号管理、日志管理、实时监控、图片管理、代理管理、注册账号、对话画图、调试中心和系统设置。
+- 第三方提供商接入：按模型名把请求路由到 OpenAI 兼容的第三方 API（如 sub2api），支持对话与生图（生图走 chat completions，自动解析 URL / Markdown / base64 多种返回并落盘到本地图片库），提供 5xx 自动重试、专用代理和后台可视化管理。
+- 管理控制台：包含概览中心、账号管理、日志管理、实时监控、图片管理、代理管理、提供商接入、注册账号、对话画图、调试中心和系统设置。
 - 自托管部署：支持 Docker、一键脚本、JSON / SQLite / PostgreSQL / Git 账号存储后端、WebDAV 图片存储和 R2 备份。
 
 ---
@@ -98,19 +91,19 @@ flowchart TB
 ### 一键安装
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yukkcat/chatgpt2api/main/deploy/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/hearthealt/chatgpt2api/main/deploy/install.sh | sudo bash
 ```
 
 固定安装当前稳定版：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yukkcat/chatgpt2api/v2.6.0/deploy/install.sh | sudo bash -s -- --branch v2.6.0
+curl -fsSL https://raw.githubusercontent.com/hearthealt/chatgpt2api/v2.6.0/deploy/install.sh | sudo bash -s -- --branch v2.6.0
 ```
 
 ### Docker 运行
 
 ```bash
-git clone https://github.com/yukkcat/chatgpt2api.git
+git clone https://github.com/hearthealt/chatgpt2api.git
 cd chatgpt2api
 cp .env.example .env
 printf '{ "auth-key": "your_secret_key_here" }\n' > config.json
@@ -151,7 +144,7 @@ docker compose -f docker-compose.warp.yml up -d
 启动后端：
 
 ```bash
-git clone https://github.com/yukkcat/chatgpt2api.git
+git clone https://github.com/hearthealt/chatgpt2api.git
 cd chatgpt2api
 uv sync
 uv run main.py
@@ -258,6 +251,7 @@ environment:
 | `auto_remove_rate_limited_accounts` | `false` | 远程确认图片额度耗尽后是否自动移除账号。 |
 | `log_retention_days` | `30` | 调用日志自动清理天数。 |
 | `proxy_runtime` | 关闭 | 稳定代理运行时和 Cloudflare clearance 配置。 |
+| `providers` | `[]` | 第三方 OpenAI 兼容 API 提供商列表；每项含 `name` / `base_url` / `api_key` / `models` / `image_models` / `enabled` / `timeout_secs` / `proxy`，可在后台「提供商接入」页面管理。 |
 
 ### 状态说明
 
@@ -511,10 +505,10 @@ curl "http://localhost:8000/v1/editable-file-tasks?task_id=<task_id>" \
 
 ## 原版项目贡献者
 
-<a href="https://github.com/basketikun/chatgpt2api/graphs/contributors">
-  <img alt="Contributors" src="https://contrib.rocks/image?repo=basketikun/chatgpt2api" />
+<a href="https://github.com/yukkcat/chatgpt2api/graphs/contributors">
+  <img alt="Contributors" src="https://contrib.rocks/image?repo=yukkcat/chatgpt2api" />
 </a>
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/chart?repos=yukkcat/chatgpt2api&type=date&legend=top-left)](https://www.star-history.com/?repos=yukkcat%2Fchatgpt2api&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/chart?repos=hearthealt/chatgpt2api&type=date&legend=top-left)](https://www.star-history.com/?repos=hearthealt%2Fchatgpt2api&type=date&legend=top-left)
