@@ -83,7 +83,7 @@ services:
       start_period: 30s
 
   app:
-    image: ${CHATGPT2API_IMAGE:-ghcr.io/yukkcat/chatgpt2api:latest}
+    image: ${CHATGPT2API_IMAGE:-ghcr.io/hearthealt/chatgpt2api:latest}
     container_name: chatgpt2api-warp
     restart: unless-stopped
     depends_on:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_OWNER="${REPO_OWNER:-yukkcat}"
+REPO_OWNER="${REPO_OWNER:-hearthealt}"
 REPO_NAME="${REPO_NAME:-chatgpt2api}"
 BRANCH="${BRANCH:-main}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/chatgpt2api}"
@@ -30,7 +30,7 @@ usage() {
   printf '%s\n' "$(text usage_usage)"
   cat <<'EOF'
   bash deploy/install.sh
-  curl -fsSL https://raw.githubusercontent.com/yukkcat/chatgpt2api/main/deploy/install.sh | sudo bash
+  curl -fsSL https://raw.githubusercontent.com/hearthealt/chatgpt2api/main/deploy/install.sh | sudo bash
 EOF
 
   printf '\n%s\n' "$(text usage_env)"
@@ -45,7 +45,7 @@ EOF
   STORAGE_BACKEND=json|sqlite|postgres|git
   DATABASE_URL=postgresql://...
   INSTALL_LANG=zh|en
-  CHATGPT2API_IMAGE=ghcr.io/yukkcat/chatgpt2api:latest
+  CHATGPT2API_IMAGE=ghcr.io/hearthealt/chatgpt2api:latest
   GIT_REPO_URL=https://github.com/your/private-storage.git
   GIT_TOKEN=ghp_xxx
   GIT_BRANCH=main
@@ -70,7 +70,7 @@ EOF
   --git-auth-keys-file-path auth_keys.json
   --with-warp
   --without-warp
-  --repo-owner yukkcat
+  --repo-owner hearthealt
   --repo-name chatgpt2api
   -h, --help
 EOF
