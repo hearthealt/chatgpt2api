@@ -531,7 +531,20 @@ json_escape() {
 }
 
 write_default_config_json() {
-  local config_file="${INSTALL_DIR}/config.json"
+  # Docker 模式下 config.json 随数据目录挂载（./data/config.json -> /app/data/config.json）；
+  # Python 模式下仍使用仓库根目录的 config.json。
+  local config_file
+  if [[ "${MODE}" == "docker" ]]; then
+    config_file="${INSTALL_DIR}/data/config.json"
+    mkdir -p "${INSTALL_DIR}/data"
+    # 迁移旧版本遗留在根目录的 config.json
+    if [[ -f "${INSTALL_DIR}/config.json" && ! -e "${config_file}" ]]; then
+      mv "${INSTALL_DIR}/config.json" "${config_file}"
+      ui_println "[$(text prefix_info)] migrated config.json -> data/config.json"
+    fi
+  else
+    config_file="${INSTALL_DIR}/config.json"
+  fi
   local tmp_file="${config_file}.tmp"
 
   if [[ -f "${config_file}" ]]; then

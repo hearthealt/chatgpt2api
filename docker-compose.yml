@@ -4,11 +4,12 @@ services:
     container_name: chatgpt2api
     restart: unless-stopped
     ports:
-      - "${CHATGPT2API_PORT:-3000}:80"
+      - "${CHATGPT2API_PORT:-3000}:8080"
     volumes:
+      # config.json 与全部运行数据都放在 data 目录卷里，无需再单独挂载单个文件
       - ./data:/app/data
-      - ./config.json:/app/config.json
     environment:
+      CHATGPT2API_CONFIG_FILE: /app/data/config.json
       STORAGE_BACKEND: ${STORAGE_BACKEND:-json}
       DATABASE_URL: ${DATABASE_URL:-}
       GIT_REPO_URL: ${GIT_REPO_URL:-}

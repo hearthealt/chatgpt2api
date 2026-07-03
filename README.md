@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Vite-7-646CFF?logo=vite&logoColor=white" />
   <img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white" />
 </p>
-<p align="center"><strong>当前稳定版本：v2.7.0</strong> | <a href="https://github.com/hearthealt/chatgpt2api/releases/tag/v2.7.0">发布说明</a> | <a href="https://github.com/hearthealt/chatgpt2api/releases">全部版本</a></p>
+<p align="center"><strong>当前稳定版本：v1.0.0</strong> | <a href="https://github.com/hearthealt/chatgpt2api/releases/tag/v1.0.0">发布说明</a> | <a href="https://github.com/hearthealt/chatgpt2api/releases">全部版本</a></p>
 
 ---
 
@@ -97,7 +97,7 @@ curl -fsSL https://raw.githubusercontent.com/hearthealt/chatgpt2api/main/deploy/
 固定安装当前稳定版：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hearthealt/chatgpt2api/v2.6.0/deploy/install.sh | sudo bash -s -- --branch v2.6.0
+curl -fsSL https://raw.githubusercontent.com/hearthealt/chatgpt2api/v1.0.0/deploy/install.sh | sudo bash -s -- --branch v1.0.0
 ```
 
 ### Docker 运行
@@ -106,16 +106,28 @@ curl -fsSL https://raw.githubusercontent.com/hearthealt/chatgpt2api/v2.6.0/deplo
 git clone https://github.com/hearthealt/chatgpt2api.git
 cd chatgpt2api
 cp .env.example .env
-printf '{ "auth-key": "your_secret_key_here" }\n' > config.json
+# 在 .env 中设置 CHATGPT2API_AUTH_KEY 后即可启动
 docker compose up -d
 ```
 
-启动前请先在 `.env` 中设置 `CHATGPT2API_AUTH_KEY`，也可以继续在 `config.json` 中填写 `auth-key`。
-仓库只保留 `config.example.yaml` 作为配置示例，运行时真实配置文件仍是本地 `config.json`，不要把本地配置提交到仓库。
+启动前请先在 `.env` 中设置 `CHATGPT2API_AUTH_KEY`（必填）。
+运行时配置文件为数据目录下的 `data/config.json`（容器内 `/app/data/config.json`），
+首次启动如未提供会按 `.env` 中的 auth-key 自动创建，也可手动预置：
+
+```bash
+mkdir -p data
+printf '{ "auth-key": "your_secret_key_here" }\n' > data/config.json
+```
+
+> 注意：`config.json` 现在随 `./data` 数据卷一起挂载，不再单独挂载单个文件，
+> 避免了「host 上文件不存在时被 Docker 误建成目录」的问题。
+> 从旧版本升级时，请把原来根目录的 `config.json` 移动到 `data/config.json`。
+
+仓库只保留 `config.example.yaml` 作为配置示例，不要把本地配置提交到仓库。
 
 - Web 面板：`http://localhost:3000`
 - API 地址：`http://localhost:3000/v1`
-- 数据目录：`./data`
+- 数据目录：`./data`（config.json、数据库、日志、图片等都在这里）
 
 ### WARP / FlareSolverr 稳定代理部署
 
@@ -123,7 +135,7 @@ docker compose up -d
 
 ```bash
 cp .env.example .env
-printf '{ "auth-key": "your_secret_key_here" }\n' > config.json
+# 在 .env 中设置 CHATGPT2API_AUTH_KEY 后即可启动
 docker compose -f docker-compose.warp.yml up -d
 ```
 
