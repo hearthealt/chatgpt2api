@@ -198,6 +198,8 @@
 import { computed, onActivated, onMounted, reactive, ref } from 'vue'
 import { Button, Checkbox, EmptyState, Input } from 'nanocat-ui'
 import { providersApi, type Provider, type ProviderTestResult } from '@/api/providers'
+import { useModelCatalog } from '@/composables/useModelCatalog'
+import { useSettingsStore } from '@/stores/settings'
 import FormSection from '@/components/ai/FormSection.vue'
 import ModalBody from '@/components/ai/ModalBody.vue'
 import ModalFooter from '@/components/ai/ModalFooter.vue'
@@ -212,6 +214,8 @@ import { useToast } from '@/composables/useToast'
 
 const toast = useToast()
 const confirm = useConfirmDialog()
+const settingsStore = useSettingsStore()
+const { loadModelCatalog } = useModelCatalog(() => settingsStore.settings)
 
 const providers = ref<Provider[]>([])
 const loading = ref(false)
@@ -428,6 +432,8 @@ async function saveProvider() {
     providers.value = response.providers || []
     toast.success('提供商已保存')
     modalOpen.value = false
+    // 刷新模型目录,使 Studio 页面立即看到新模型
+    void loadModelCatalog(true)
   } catch (error) {
     toast.error((error as Error).message || '保存失败')
   } finally {
@@ -447,6 +453,8 @@ async function removeProvider(provider: Provider) {
     const response = await providersApi.delete(provider.name)
     providers.value = response.providers || []
     toast.success('提供商已删除')
+    // 刷新模型目录,移除已删除的模型
+    void loadModelCatalog(true)
   } catch (error) {
     toast.error((error as Error).message || '删除失败')
   } finally {
