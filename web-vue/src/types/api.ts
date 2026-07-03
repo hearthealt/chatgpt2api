@@ -198,6 +198,16 @@ export interface Settings {
     enabled: boolean
     notes?: string
   }>
+  providers?: Array<{
+    name: string
+    base_url: string
+    api_key: string
+    models: string[]
+    image_models: string[]
+    enabled: boolean
+    timeout_secs: number
+    proxy: string
+  }>
 }
 
 export interface SettingsUpdateResponse {

@@ -19,7 +19,7 @@
         >
           <div class="flex items-center gap-2" :class="isSidebarRail ? 'gap-0 justify-center w-full' : ''">
             <a
-              href="https://github.com/yukkcat/chatgpt2api"
+              href="https://github.com/hearthealt/chatgpt2api"
               target="_blank"
               rel="noopener noreferrer"
               class="text-foreground transition-colors hover:text-primary"
@@ -645,6 +645,11 @@ const menuItems = [
     icon: 'M12 3a5 5 0 0 1 5 5v2h1a3 3 0 0 1 3 3v5a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-5a3 3 0 0 1 3-3h1V8a5 5 0 0 1 5-5zm-3 7h6V8a3 3 0 0 0-6 0v2zm-3 2a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5a1 1 0 0 0-1-1H6z',
   },
   {
+    path: '/providers',
+    label: '提供商接入',
+    icon: 'M4 5h16a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zm2 2v2h2V7H6zm-2 6h16a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1zm2 2v2h2v-2H6z',
+  },
+  {
     path: '/settings',
     label: '系统设置',
     icon: 'M4 6h10v2H4V6zm12 0h4v2h-4V6zM4 11h6v2H4v-2zm8 0h8v2h-8v-2zM4 16h10v2H4v-2zm12 0h4v2h-4v-2z',
@@ -666,6 +671,7 @@ const routeTitleMap: Record<string, string> = {
   gallery: '图片管理',
   proxy: '代理管理',
   register: '注册账号',
+  providers: '提供商接入',
   settings: '系统设置',
   debug: '调试中心',
   monitor: '实时监控',
@@ -774,9 +780,9 @@ let stopRoutePendingBeforeEach: (() => void) | null = null
 let stopRoutePendingAfterEach: (() => void) | null = null
 let stopRoutePendingError: (() => void) | null = null
 const prefetchedRoutePaths = new Set<string>()
-const releasePageUrl = 'https://github.com/yukkcat/chatgpt2api/releases'
-const latestVersionUrl = 'https://raw.githubusercontent.com/yukkcat/chatgpt2api/main/VERSION'
-const latestChangelogUrl = 'https://raw.githubusercontent.com/yukkcat/chatgpt2api/main/CHANGELOG.md'
+const releasePageUrl = 'https://github.com/hearthealt/chatgpt2api/releases'
+const latestVersionUrl = 'https://raw.githubusercontent.com/hearthealt/chatgpt2api/main/VERSION'
+const latestChangelogUrl = 'https://raw.githubusercontent.com/hearthealt/chatgpt2api/main/CHANGELOG.md'
 const updateCheckingMessage = '正在检查云端版本...'
 const routeViewLoaders: Record<string, () => Promise<unknown>> = {
   '/': () => import('@/views/Dashboard.vue'),
@@ -785,6 +791,7 @@ const routeViewLoaders: Record<string, () => Promise<unknown>> = {
   '/gallery': () => import('@/views/Gallery.vue'),
   '/monitor': () => import('@/views/Monitor.vue'),
   '/proxy': () => import('@/views/Proxy.vue'),
+  '/providers': () => import('@/views/Providers.vue'),
   '/settings': () => import('@/views/Settings.vue'),
   '/register': () => import('@/views/Register.vue'),
   '/debug': () => import('@/views/DebugCenter.vue'),

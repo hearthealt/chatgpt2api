@@ -164,3 +164,22 @@ runtime_capacity:
   request_queue_timeout_seconds: 2
 
 proxy_profiles: []
+
+# 第三方 OpenAI 兼容 API 提供商（可选）。
+# 按模型名路由：命中已配置模型的请求走第三方 API，未命中则走原有 ChatGPT 上游。
+# 生图模型走 chat completions（第三方约定），返回内容里包含图片 URL。
+# 也可在后台「提供商接入」页面可视化管理，无需手动编辑此处。
+providers: []
+  # - name: kunstone                           # 提供商标识（唯一）
+  #   base_url: "https://sub2api.kunstone.com" # API 基础地址（末尾不带 /）
+  #   api_key: "sk-fc2f..."                    # Bearer Token
+  #   models:                                  # 对话模型列表
+  #     - gpt-5.4
+  #     - gpt-5.5
+  #     - grok-4.3-fast
+  #     - grok-4.3-high
+  #   image_models:                            # 生图模型列表（走 chat completions）
+  #     - grok-imagine-image-lite
+  #   enabled: true
+  #   timeout_secs: 120
+  #   proxy: ""                                # 可选，该提供商专用代理，留空使用全局出口

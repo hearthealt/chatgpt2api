@@ -48,3 +48,4 @@ tests/
 docs/*.md
 scripts/test_*.py
 web/
+*.bak

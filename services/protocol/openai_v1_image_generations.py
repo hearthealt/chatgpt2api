@@ -1,18 +1,73 @@
 from __future__ import annotations
 
+import base64
+import time
 from typing import Any, Iterator
+
+from fastapi import HTTPException
 
 from services.protocol.conversation import (
     ConversationRequest,
     collect_image_outputs,
     count_text_tokens,
+    save_image_bytes,
     stream_image_chunks,
     stream_image_outputs_with_pool,
 )
+from services.provider_service import provider_service
+from services.third_party_backend import ThirdPartyBackend, resolve_image_bytes
 from utils.image_tokens import count_image_output_items_tokens, image_usage
 
 
+def third_party_image_generation(provider, body: dict[str, Any]) -> dict[str, Any]:
+    model = str(body.get("model") or "").strip()
+    prompt = str(body.get("prompt") or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail={"error": "prompt is required"})
+    try:
+        n = max(1, min(4, int(body.get("n") or 1)))
+    except (TypeError, ValueError):
+        n = 1
+    response_format = str(body.get("response_format") or "url").strip().lower()
+    base_url = str(body.get("base_url") or "").strip() or None
+    with ThirdPartyBackend(provider) as backend:
+        urls = backend.image_via_chat(prompt, model, n=n)
+    if not urls:
+        raise HTTPException(status_code=502, detail={"error": "上游未返回图片 URL"})
+
+    data: list[dict[str, Any]] = []
+    for source in urls:
+        image_bytes = resolve_image_bytes(source, getattr(provider, "proxy", "") or "")
+        if image_bytes:
+            # 下载/解码成功：落盘到本地图片库（图片管理可见），返回本地 URL / b64。
+            entry: dict[str, Any] = {}
+            try:
+                entry["url"] = save_image_bytes(image_bytes, base_url)
+            except Exception:
+                if source.startswith(("http://", "https://")):
+                    entry["url"] = source
+            if response_format == "b64_json":
+                entry["b64_json"] = base64.b64encode(image_bytes).decode("ascii")
+            if entry:
+                data.append(entry)
+        elif source.startswith(("http://", "https://")):
+            # 下载失败：回退上游 URL，保证仍有可用产物。
+            data.append({"url": source})
+
+    return {
+        "created": int(time.time()),
+        "data": data,
+        "usage": image_usage(
+            input_text_tokens=count_text_tokens(prompt, model),
+            output_tokens=count_image_output_items_tokens(data),
+        ),
+    }
+
+
 def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
+    provider = provider_service.resolve(str(body.get("model") or ""))
+    if provider is not None:
+        return third_party_image_generation(provider, body)
     prompt = str(body.get("prompt") or "")
     model = str(body.get("model") or "gpt-image-2")
     n = int(body.get("n") or 1)

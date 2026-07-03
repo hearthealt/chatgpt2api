@@ -67,6 +67,20 @@ def _image_dimensions(payload: bytes) -> tuple[int, int] | None:
         return None
 
 
+def _detect_image_extension(image_data: bytes) -> str:
+    """按图片真实字节魔数判断扩展名，避免把 JPEG/WEBP/GIF 存成 .png 后本地打不开。"""
+    head = bytes(image_data[:16])
+    if head[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if head[:3] == b"\xff\xd8\xff":
+        return "jpg"
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "webp"
+    return "png"
+
+
 def _is_image_rel(path: str) -> bool:
     try:
         safe_rel = _safe_relative_path(path)
@@ -198,7 +212,8 @@ class ImageStorageService:
 
     def make_relative_path(self, image_data: bytes) -> str:
         file_hash = hashlib.md5(image_data).hexdigest()
-        filename = f"{int(time.time())}_{file_hash}.png"
+        extension = _detect_image_extension(image_data)
+        filename = f"{int(time.time())}_{file_hash}.{extension}"
         now = beijing_now()
         relative_dir = Path(now.strftime("%Y"), now.strftime("%m"), now.strftime("%d"))
         return f"{relative_dir.as_posix()}/{filename}"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import quote
@@ -74,6 +75,7 @@ SETTINGS_UPDATE_KEYS = {
     "backup",
     "chat_completion_cache",
     "third_party_apps",
+    "providers",
 }
 
 
@@ -134,6 +136,26 @@ class LogDeleteRequest(BaseModel):
     ids: list[str] = []
 class BackupDeleteRequest(BaseModel):
     key: str = ""
+
+
+class ProviderRequest(BaseModel):
+    name: str = ""
+    base_url: str = ""
+    api_key: str = ""
+    models: list[str] = Field(default_factory=list)
+    image_models: list[str] = Field(default_factory=list)
+    enabled: bool = True
+    timeout_secs: int = 120
+    proxy: str = ""
+    original_name: str = ""
+    create_only: bool = False
+
+
+class ProviderTestRequest(BaseModel):
+    base_url: str = ""
+    api_key: str = ""
+    proxy: str = ""
+    model: str = ""
 
 
 def _clean_text(value: object) -> str:
@@ -320,6 +342,113 @@ def _resolve_profile_proxy(profile_id: str) -> str:
         if profile.get("id") == normalized and profile.get("enabled", True):
             return _clean_text(profile.get("proxy"))
     return ""
+
+
+def _providers_list() -> list[dict[str, Any]]:
+    return config.get_providers_settings()
+
+
+def _test_provider_connection(base_url: str, api_key: str, proxy: str) -> dict[str, Any]:
+    from curl_cffi import requests
+
+    url = f"{base_url.rstrip('/')}/v1/models"
+    headers = {"Accept": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    started = time.monotonic()
+    try:
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=20,
+            **proxy_settings.build_session_kwargs(proxy=proxy, upstream=True),
+        )
+    except Exception as exc:
+        return {"ok": False, "status": 0, "error": str(exc)}
+    latency_ms = int((time.monotonic() - started) * 1000)
+    ok = 200 <= response.status_code < 300
+    count = 0
+    if ok:
+        try:
+            data = response.json().get("data")
+            count = len(data) if isinstance(data, list) else 0
+        except Exception:
+            count = 0
+    return {
+        "ok": ok,
+        "status": response.status_code,
+        "latency_ms": latency_ms,
+        "model_count": count,
+        "error": None if ok else f"HTTP {response.status_code}",
+    }
+
+
+def _fetch_provider_models(base_url: str, api_key: str, proxy: str) -> dict[str, Any]:
+    from curl_cffi import requests
+
+    url = f"{base_url.rstrip('/')}/v1/models"
+    headers = {"Accept": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    try:
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=20,
+            **proxy_settings.build_session_kwargs(proxy=proxy, upstream=True),
+        )
+    except Exception as exc:
+        return {"ok": False, "status": 0, "models": [], "error": str(exc)}
+    if not 200 <= response.status_code < 300:
+        return {"ok": False, "status": response.status_code, "models": [], "error": f"HTTP {response.status_code}"}
+    try:
+        data = response.json().get("data")
+    except Exception as exc:
+        return {"ok": False, "status": response.status_code, "models": [], "error": f"解析响应失败：{exc}"}
+    models: list[str] = []
+    seen: set[str] = set()
+    if isinstance(data, list):
+        for item in data:
+            model_id = _clean_text(item.get("id")) if isinstance(item, dict) else _clean_text(item)
+            if model_id and model_id not in seen:
+                seen.add(model_id)
+                models.append(model_id)
+    return {"ok": True, "status": response.status_code, "models": models, "error": None}
+
+
+def _provider_entry_from_request(body: ProviderRequest) -> dict[str, Any]:
+    return {
+        "name": _clean_text(body.name),
+        "base_url": _clean_text(body.base_url).rstrip("/"),
+        "api_key": _clean_text(body.api_key),
+        "models": [_clean_text(item) for item in body.models if _clean_text(item)],
+        "image_models": [_clean_text(item) for item in body.image_models if _clean_text(item)],
+        "enabled": bool(body.enabled),
+        "timeout_secs": max(1, int(body.timeout_secs or 120)),
+        "proxy": _clean_text(body.proxy),
+    }
+
+
+def _upsert_provider(body: ProviderRequest) -> dict[str, Any]:
+    entry = _provider_entry_from_request(body)
+    if not entry["name"]:
+        raise ValueError("provider name is required")
+    if not entry["base_url"]:
+        raise ValueError("provider base_url is required")
+    previous_name = _clean_text(body.original_name) or entry["name"]
+    providers = _config_dict_list("providers")
+    name_key = entry["name"].lower()
+    exists = any(_clean_text(item.get("name")).lower() == name_key for item in providers)
+    if body.create_only and exists:
+        raise ValueError("provider already exists")
+    remove_keys = {name_key, previous_name.lower()}
+    next_providers = [
+        item for item in providers
+        if _clean_text(item.get("name")).lower() not in remove_keys
+    ]
+    next_providers.append(entry)
+    updated = config.update({"providers": next_providers})
+    return {"provider": entry, "providers": updated.get("providers", [])}
 
 
 def _increment(counter: dict[str, int], key: object, default: str = "unknown") -> None:
@@ -624,6 +753,51 @@ def create_router(app_version: str) -> APIRouter:
     async def model_catalog(authorization: str | None = Header(default=None)):
         require_admin(authorization)
         return get_model_catalog()
+
+    @router.get("/api/providers")
+    async def list_providers(authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        return {"providers": _providers_list()}
+
+    @router.post("/api/providers")
+    async def save_provider(body: ProviderRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        try:
+            return _upsert_provider(body)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail={"error": _config_write_error_message(exc)}) from exc
+
+    @router.delete("/api/providers/{name}")
+    async def delete_provider(name: str, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        normalized = _clean_text(name).lower()
+        providers = _config_dict_list("providers")
+        next_providers = [item for item in providers if _clean_text(item.get("name")).lower() != normalized]
+        if len(next_providers) == len(providers):
+            raise HTTPException(status_code=404, detail={"error": "provider not found"})
+        try:
+            updated = config.update({"providers": next_providers})
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail={"error": _config_write_error_message(exc)}) from exc
+        return {"deleted": _clean_text(name), "providers": updated.get("providers", [])}
+
+    @router.post("/api/providers/test")
+    async def test_provider(body: ProviderTestRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        base_url = _clean_text(body.base_url).rstrip("/")
+        if not base_url:
+            raise HTTPException(status_code=400, detail={"error": "base_url is required"})
+        return {"result": await run_in_threadpool(_test_provider_connection, base_url, _clean_text(body.api_key), _clean_text(body.proxy))}
+
+    @router.post("/api/providers/models")
+    async def fetch_provider_models(body: ProviderTestRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        base_url = _clean_text(body.base_url).rstrip("/")
+        if not base_url:
+            raise HTTPException(status_code=400, detail={"error": "base_url is required"})
+        return await run_in_threadpool(_fetch_provider_models, base_url, _clean_text(body.api_key), _clean_text(body.proxy))
 
     @router.get("/api/images")
     async def get_images(

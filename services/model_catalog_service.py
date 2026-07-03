@@ -4,6 +4,7 @@ from typing import Any
 
 from services.account_service import account_service
 from services.config import config
+from services.provider_service import provider_service
 from utils.helper import CODEX_IMAGE_MODEL
 
 
@@ -123,6 +124,15 @@ def get_model_catalog() -> dict[str, Any]:
 
     chat_models = _unique(chat_models)
     image_models = _unique(image_models)
+
+    # 追加第三方 Provider 的模型（对话 + 生图）。
+    provider_chat_models = provider_service.list_chat_models()
+    provider_image_models = provider_service.list_image_models()
+    if provider_chat_models:
+        chat_models = _unique([*chat_models, *provider_chat_models])
+    if provider_image_models:
+        image_models = _unique([*image_models, *provider_image_models])
+
     all_models = _unique([*chat_models, *image_models])
 
     return {

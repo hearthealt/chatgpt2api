@@ -98,6 +98,8 @@ DEFAULT_THIRD_PARTY_APPS = {
     },
 }
 
+DEFAULT_PROVIDER_TIMEOUT_SECS = 120
+
 
 def _normalize_bool(value: object, default: bool = False) -> bool:
     if isinstance(value, str):
@@ -301,6 +303,60 @@ def _normalize_third_party_apps_settings(value: object) -> dict[str, object]:
             "url": str(canvas_source.get("url") or DEFAULT_THIRD_PARTY_APPS["infinite_canvas"]["url"]).strip(),
         },
     }
+
+
+def _normalize_provider(value: object) -> dict[str, object] | None:
+    if not isinstance(value, dict):
+        return None
+    name = str(value.get("name") or "").strip()
+    base_url = str(value.get("base_url") or "").strip().rstrip("/")
+    if not name or not base_url:
+        return None
+    models = _normalize_str_list(value.get("models"))
+    image_models = _normalize_str_list(value.get("image_models"))
+    return {
+        "name": name,
+        "base_url": base_url,
+        "api_key": str(value.get("api_key") or "").strip(),
+        "models": models,
+        "image_models": image_models,
+        "enabled": _normalize_bool(value.get("enabled"), True),
+        "timeout_secs": _normalize_positive_int(
+            value.get("timeout_secs"), DEFAULT_PROVIDER_TIMEOUT_SECS, 1
+        ),
+        "proxy": str(value.get("proxy") or "").strip(),
+    }
+
+
+def _normalize_str_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        text = str(item or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
+def _normalize_providers_settings(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    providers: list[dict[str, object]] = []
+    seen_names: set[str] = set()
+    for item in value:
+        provider = _normalize_provider(item)
+        if provider is None:
+            continue
+        name_key = str(provider["name"]).lower()
+        if name_key in seen_names:
+            continue
+        seen_names.add(name_key)
+        providers.append(provider)
+    return providers
 
 
 def _legacy_basic_from_settings(value: object, settings: dict[str, object]) -> dict[str, object]:
@@ -642,6 +698,7 @@ class ConfigStore:
             data["proxy_runtime"] = self.get_public_proxy_runtime_settings()
             data["fallback_proxy"] = self.get_proxy_fallback_settings()
             data["third_party_apps"] = self.get_third_party_apps_settings()
+            data["providers"] = self.get_providers_settings()
             data["basic"] = _legacy_basic_from_settings(data.get("basic"), data)
             data.pop("auth-key", None)
             return data
@@ -670,6 +727,10 @@ class ConfigStore:
     def get_third_party_apps_settings(self) -> dict[str, object]:
         return _normalize_third_party_apps_settings(self.data.get("third_party_apps"))
 
+    def get_providers_settings(self) -> list[dict[str, object]]:
+        self.reload_if_changed()
+        return _normalize_providers_settings(self.data.get("providers"))
+
     def update(self, data: dict[str, object]) -> dict[str, object]:
         with self._lock:
             self.reload_if_changed()
@@ -687,6 +748,8 @@ class ConfigStore:
                 )
             if "third_party_apps" in next_data:
                 next_data["third_party_apps"] = _normalize_third_party_apps_settings(next_data.get("third_party_apps"))
+            if "providers" in next_data:
+                next_data["providers"] = _normalize_providers_settings(next_data.get("providers"))
             if "proxy_runtime" in next_data:
                 incoming_runtime = next_data.get("proxy_runtime")
                 if isinstance(incoming_runtime, dict):

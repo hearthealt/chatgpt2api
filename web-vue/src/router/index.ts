@@ -56,6 +56,12 @@ const router = createRouter({
           meta: { adminOnly: true },
         },
         {
+          path: 'providers',
+          name: 'providers',
+          component: () => import('@/views/Providers.vue'),
+          meta: { adminOnly: true },
+        },
+        {
           path: 'register',
           name: 'register',
           component: () => import('@/views/Register.vue'),

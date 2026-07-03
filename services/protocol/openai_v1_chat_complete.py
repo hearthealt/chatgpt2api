@@ -17,6 +17,7 @@ from services.protocol.conversation import (
     count_text_tokens,
     encode_images,
     normalize_messages,
+    save_image_bytes,
     stream_image_outputs_with_pool,
     stream_text_deltas,
     text_backend,
@@ -30,6 +31,8 @@ from services.protocol.web_search_tool import (
     search_query_from_messages,
     text_with_url_citations,
 )
+from services.provider_service import provider_service
+from services.third_party_backend import ThirdPartyBackend, resolve_image_bytes
 from utils.helper import build_chat_image_markdown_content, extract_chat_image, extract_chat_prompt, is_image_chat_request, parse_image_count
 from utils.image_tokens import (
     chat_usage_from_image_usage,
@@ -306,6 +309,98 @@ def stream_image_chat_completion(image_outputs: Iterable[ImageOutput], model: st
     yield completion_chunk(model, {}, "stop", completion_id, created)
 
 
+_PASSTHROUGH_PARAMS = (
+    "temperature",
+    "top_p",
+    "max_tokens",
+    "presence_penalty",
+    "frequency_penalty",
+    "stop",
+    "reasoning_effort",
+)
+
+
+def _third_party_params(body: dict[str, Any]) -> dict[str, Any]:
+    return {key: body[key] for key in _PASSTHROUGH_PARAMS if body.get(key) is not None}
+
+
+def third_party_chat_response(provider, body: dict[str, Any], messages: list[dict[str, Any]], model: str) -> dict[str, Any]:
+    with ThirdPartyBackend(provider) as backend:
+        result = backend.chat_completion(messages, model, **_third_party_params(body))
+    if isinstance(result, dict):
+        result.setdefault("model", model)
+    return result
+
+
+def third_party_chat_stream(provider, body: dict[str, Any], messages: list[dict[str, Any]], model: str) -> Iterator[dict[str, Any]]:
+    backend = ThirdPartyBackend(provider)
+    try:
+        for chunk in backend.chat_completion_stream(messages, model, **_third_party_params(body)):
+            if isinstance(chunk, dict):
+                chunk.setdefault("model", model)
+            yield chunk
+    finally:
+        backend.close()
+
+
+def _persist_provider_image_urls(urls: list[str], provider, base_url: str | None) -> list[dict[str, Any]]:
+    """把第三方返回的图片来源（URL 或 data:image base64）落盘到本地图片库，返回本地 URL。
+
+    下载/解码失败时：http URL 回退原始 URL；data URL 无法回退，则丢弃该项。
+    """
+    data: list[dict[str, Any]] = []
+    for source in urls:
+        image_bytes = resolve_image_bytes(source, getattr(provider, "proxy", "") or "")
+        if image_bytes:
+            try:
+                data.append({"url": save_image_bytes(image_bytes, base_url)})
+                continue
+            except Exception:
+                pass
+        if source.startswith(("http://", "https://")):
+            data.append({"url": source})
+    return data
+
+
+def _third_party_image_content(provider, body: dict[str, Any], model: str) -> str:
+    prompt = extract_chat_prompt(body)
+    if not prompt:
+        raise HTTPException(status_code=400, detail={"error": "prompt is required"})
+    n = parse_image_count(body.get("n"))
+    with ThirdPartyBackend(provider) as backend:
+        urls = backend.image_via_chat(prompt, model, n=n)
+    if not urls:
+        raise HTTPException(status_code=502, detail={"error": "上游未返回图片 URL"})
+    base_url = str(body.get("base_url") or "").strip() or None
+    data = _persist_provider_image_urls(urls, provider, base_url)
+    return build_chat_image_markdown_content({"data": data})
+
+
+def third_party_image_chat_response(provider, body: dict[str, Any], model: str) -> dict[str, Any]:
+    return completion_response(model, _third_party_image_content(provider, body, model))
+
+
+def third_party_image_chat_stream(provider, body: dict[str, Any], model: str) -> Iterator[dict[str, Any]]:
+    content = _third_party_image_content(provider, body, model)
+    completion_id = f"chatcmpl-{uuid.uuid4().hex}"
+    created = int(time.time())
+    yield completion_chunk(model, {"role": "assistant", "content": content}, None, completion_id, created)
+    yield completion_chunk(model, {}, "stop", completion_id, created)
+
+
+def third_party_handle(provider, body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
+    model = str(body.get("model") or "").strip()
+    stream = bool(body.get("stream"))
+    if provider_service.is_provider_image_model(model):
+        if stream:
+            return third_party_image_chat_stream(provider, body, model)
+        return third_party_image_chat_response(provider, body, model)
+    messages = chat_messages_from_body(body)
+    if stream:
+        return third_party_chat_stream(provider, body, messages, model)
+    return third_party_chat_response(provider, body, messages, model)
+
+
 def text_completion_response(model: str, messages: list[dict[str, Any]], thinking_effort: str) -> dict[str, Any]:
     backend = text_backend()
     response = completion_response(
@@ -317,6 +412,9 @@ def text_completion_response(model: str, messages: list[dict[str, Any]], thinkin
 
 
 def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
+    provider = provider_service.resolve(str(body.get("model") or ""))
+    if provider is not None:
+        return third_party_handle(provider, body)
     if body.get("stream"):
         if is_image_chat_request(body):
             return image_chat_events(body)
