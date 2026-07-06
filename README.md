@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Vite-7-646CFF?logo=vite&logoColor=white" />
   <img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white" />
 </p>
-<p align="center"><strong>当前稳定版本：v1.1.0</strong> | <a href="https://github.com/hearthealt/chatgpt2api/releases/tag/v1.1.0">发布说明</a> | <a href="https://github.com/hearthealt/chatgpt2api/releases">全部版本</a></p>
+<p align="center"><strong>当前稳定版本：v1.1.1</strong> | <a href="https://github.com/hearthealt/chatgpt2api/releases/tag/v1.1.1">发布说明</a> | <a href="https://github.com/hearthealt/chatgpt2api/releases">全部版本</a></p>
 
 ---
 
@@ -97,7 +97,7 @@ curl -fsSL https://raw.githubusercontent.com/hearthealt/chatgpt2api/main/deploy/
 固定安装当前稳定版：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hearthealt/chatgpt2api/v1.1.0/deploy/install.sh | sudo bash -s -- --branch v1.1.0
+curl -fsSL https://raw.githubusercontent.com/hearthealt/chatgpt2api/v1.1.1/deploy/install.sh | sudo bash -s -- --branch v1.1.1
 ```
 
 ### Docker 运行

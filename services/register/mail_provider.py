@@ -2065,6 +2065,12 @@ def create_mailbox(mail_config: dict, username: str | None = None) -> dict:
             tried.add(provider_key)
             mailbox = provider.create_mailbox(username)
             mailbox["_code_not_before"] = datetime.now(timezone.utc)
+
+            # 为 MSAccountManager 保存必要的配置信息以便后续更新备注
+            if provider.name == "msaccount_manager":
+                mailbox["_ms_api_base"] = getattr(provider, "api_base", None)
+                mailbox["_ms_api_key"] = getattr(provider, "api_key", None)
+
             return mailbox
         except RuntimeError as error:
             last_error = str(error)
@@ -2086,32 +2092,69 @@ def wait_for_code(mail_config: dict, mailbox: dict) -> str | None:
 def mark_mailbox_result(mailbox: dict, *, success: bool, error: Exception | str | None = None) -> None:
     """注册流程结束后更新邮箱池状态。
 
-    仅对 outlook_token 邮箱生效：成功标记 used；失败时若是 token 失效标记 token_invalid，
-    登录态问题标记 login_required，其余失败标记 failed（可重试但不会自动再次领用）。
+    - outlook_token: 成功标记 used；失败时若是 token 失效标记 token_invalid，
+      登录态问题标记 login_required，其余失败标记 failed（可重试但不会自动再次领用）。
+    - msaccount_manager: 更新账号备注为"已使用"或"注册失败"。
     """
-    if str(mailbox.get("provider") or "") != OutlookTokenProvider.name:
+    provider_name = str(mailbox.get("provider") or "")
+
+    # 处理 outlook_token 提供商
+    if provider_name == OutlookTokenProvider.name:
+        address = str(mailbox.get("address") or "").strip()
+        if not address:
+            return
+        if success:
+            _set_outlook_token_state(address, "used")
+            return
+        reason = str(error or "").strip()
+        if isinstance(error, OutlookTokenRateLimitError) or "AADSTS90055" in reason or "HTTP 429" in reason or "Microsoft 限流" in reason:
+            _set_outlook_token_state(address, "failed", reason[:300])
+        elif isinstance(error, OutlookTokenError) or "OutlookToken 刷新失败" in reason or "access_token" in reason:
+            _set_outlook_token_state(address, "token_invalid", reason[:300])
+            login_email = str(mailbox.get("login_email") or mailbox.get("alias_of") or "").strip()
+            if login_email and login_email.lower() != address.lower():
+                _set_outlook_token_state(login_email, "token_invalid", reason[:300])
+        elif "登录流" in reason or "login flow" in reason or "login_required" in reason:
+            _set_outlook_token_state(address, "login_required", reason[:300])
+            login_email = str(mailbox.get("login_email") or mailbox.get("alias_of") or "").strip()
+            if login_email and login_email.lower() != address.lower():
+                _set_outlook_token_state(login_email, "login_required", reason[:300])
+        else:
+            _set_outlook_token_state(address, "failed", reason[:300])
         return
-    address = str(mailbox.get("address") or "").strip()
-    if not address:
-        return
-    if success:
-        _set_outlook_token_state(address, "used")
-        return
-    reason = str(error or "").strip()
-    if isinstance(error, OutlookTokenRateLimitError) or "AADSTS90055" in reason or "HTTP 429" in reason or "Microsoft 限流" in reason:
-        _set_outlook_token_state(address, "failed", reason[:300])
-    elif isinstance(error, OutlookTokenError) or "OutlookToken 刷新失败" in reason or "access_token" in reason:
-        _set_outlook_token_state(address, "token_invalid", reason[:300])
-        login_email = str(mailbox.get("login_email") or mailbox.get("alias_of") or "").strip()
-        if login_email and login_email.lower() != address.lower():
-            _set_outlook_token_state(login_email, "token_invalid", reason[:300])
-    elif "登录流" in reason or "login flow" in reason or "login_required" in reason:
-        _set_outlook_token_state(address, "login_required", reason[:300])
-        login_email = str(mailbox.get("login_email") or mailbox.get("alias_of") or "").strip()
-        if login_email and login_email.lower() != address.lower():
-            _set_outlook_token_state(login_email, "login_required", reason[:300])
-    else:
-        _set_outlook_token_state(address, "failed", reason[:300])
+
+    # 处理 MSAccountManager 提供商
+    if provider_name == "msaccount_manager":
+        account_id = mailbox.get("account_id")
+        api_base = mailbox.get("_ms_api_base")
+        api_key = mailbox.get("_ms_api_key")
+
+        if not account_id or not api_base or not api_key:
+            return
+
+        try:
+            import requests
+            from requests.adapters import HTTPAdapter
+            from urllib3.util.retry import Retry
+
+            # 直接调用 API 更新备注，避免重建 provider
+            session = requests.Session()
+            retry = Retry(total=2, backoff_factor=0.1)
+            session.mount("https://", HTTPAdapter(max_retries=retry))
+            session.mount("http://", HTTPAdapter(max_retries=retry))
+
+            url = f"{api_base}/api/open/accounts/{account_id}/remark"
+            headers = {
+                "x-mail-api-token": api_key,
+                "Content-Type": "application/json"
+            }
+            remark = "已使用" if success else f"注册失败: {str(error)[:50]}" if error else "注册失败"
+            payload = {"remark": remark}
+
+            session.patch(url, json=payload, headers=headers, timeout=10, verify=False)
+            session.close()
+        except Exception:
+            pass  # 更新备注失败不影响注册结果
 
 
 def release_mailbox(mailbox: dict) -> None:

@@ -25,7 +25,7 @@ class LuckMailProvider(BaseMailProvider):
         self.api_key = str(entry.get("api_key") or "").strip()
         self.email_type = str(entry.get("email_type") or "").strip()  # ms_imap, ms_graph 等
         self.mail_domain = str(entry.get("mail_domain") or "").strip().lstrip("@")
-        self.max_retry = int(entry.get("max_retry") or 3)
+        self.max_retry = int(entry.get("max_retry") or 20)  # 默认最多尝试 20 次购买
 
         if not self.api_key:
             raise RuntimeError("LuckMail 需要配置 api_key")
@@ -69,53 +69,78 @@ class LuckMailProvider(BaseMailProvider):
         """购买一个邮箱（会消耗余额！）
 
         注意：username 参数被忽略，因为 LuckMail 返回的是已购买的邮箱地址
+        会自动重试购买，直到买到可用的邮箱（最多尝试 max_retry 次，默认 20 次）
         """
-        payload = {
-            "email_type": self.email_type,
-            "project_code": "openai",
-            "domain": self.mail_domain,
-            "quantity": 1,
-            "variant_mode": ""
-        }
+        last_error = ""
 
-        data = self._request("POST", "email/purchase", json=payload)
-        purchases = data.get("purchases", [])
+        for attempt in range(1, self.max_retry + 1):
+            try:
+                payload = {
+                    "email_type": self.email_type,
+                    "project_code": "openai",
+                    "domain": self.mail_domain,
+                    "quantity": 1,
+                    "variant_mode": ""
+                }
 
-        if not purchases:
-            raise RuntimeError("LuckMail 购买邮箱失败：未返回邮箱数据")
+                data = self._request("POST", "email/purchase", json=payload)
+                purchases = data.get("purchases", [])
 
-        purchase = purchases[0]
-        email_address = purchase.get("email_address")
-        token = purchase.get("token")
+                if not purchases:
+                    raise RuntimeError("LuckMail 购买邮箱失败：未返回邮箱数据")
 
-        if not email_address or not token:
-            raise RuntimeError("LuckMail 返回数据不完整")
+                purchase = purchases[0]
+                email_address = purchase.get("email_address")
+                token = purchase.get("token")
 
-        return {
-            "provider": self.name,
-            "provider_ref": self.provider_ref,
-            "address": email_address,
-            "token": token,
-            "purchase_id": purchase.get("id"),
-            "label": f"LuckMail ({email_address})"
-        }
+                if not email_address or not token:
+                    raise RuntimeError("LuckMail 返回数据不完整")
+
+                # 购买后立即测活，确保邮箱可用
+                alive_data = self._request("GET", f"email/token/{token}/alive")
+                if not alive_data.get("alive"):
+                    status = alive_data.get("status", "unknown")
+                    message = alive_data.get("message", "邮箱不可用")
+                    last_error = f"邮箱 {email_address} 测活失败 ({status}): {message}"
+                    # 测活失败，继续下一次购买
+                    continue
+
+                # 测活成功，返回邮箱
+                return {
+                    "provider": self.name,
+                    "provider_ref": self.provider_ref,
+                    "address": email_address,
+                    "token": token,
+                    "purchase_id": purchase.get("id"),
+                    "label": f"LuckMail ({email_address})"
+                }
+
+            except RuntimeError as e:
+                last_error = str(e)
+                if "测活失败" not in last_error:
+                    # 非测活失败的错误（如网络错误、余额不足等），直接抛出
+                    raise
+
+        # 所有尝试都失败
+        raise RuntimeError(f"LuckMail 购买邮箱失败（尝试了 {self.max_retry} 次）: {last_error}")
 
     def fetch_latest_message(self, mailbox: dict[str, Any]) -> dict[str, Any] | None:
-        """通过 token 获取最新邮件"""
+        """通过 token 获取最新邮件（使用 /code 接口，直接返回验证码）"""
         token = mailbox.get("token")
         if not token:
             raise RuntimeError("邮箱缺少 token")
 
         try:
-            data = self._request("GET", f"email/token/{token}/mails")
-            mails = data.get("mails", [])
+            # 获取验证码（LuckMail 的 /code 接口会直接返回 verification_code）
+            data = self._request("GET", f"email/token/{token}/code")
 
-            if not mails:
+            # 如果没有新邮件
+            if not data.get("has_new_mail"):
                 return None
 
-            # 按接收时间排序，取最新的
-            mails.sort(key=lambda m: m.get("received_at", ""), reverse=True)
-            mail = mails[0]
+            mail = data.get("mail", {})
+            if not mail:
+                return None
 
             return {
                 "provider": self.name,
@@ -124,13 +149,32 @@ class LuckMailProvider(BaseMailProvider):
                 "subject": str(mail.get("subject") or ""),
                 "sender": str(mail.get("from") or ""),
                 "to": [mailbox["address"]],
-                "text_content": str(mail.get("body") or ""),
-                "html_content": str(mail.get("html_body") or ""),
+                "text_content": str(mail.get("body_text") or ""),
+                "html_content": str(mail.get("body_html") or ""),
                 "received_at": _parse_received_at(mail.get("received_at")),
+                "verification_code": data.get("verification_code"),  # 直接包含验证码
                 "raw": mail
             }
         except Exception:
             return None
+
+    def wait_for_code(self, mailbox: dict[str, Any]) -> str | None:
+        """重写以利用 LuckMail 直接返回验证码的特性
+
+        LuckMail 的 /code 接口会直接解析并返回 verification_code，
+        无需从邮件正文中用正则提取。
+        """
+        import time
+
+        deadline = time.monotonic() + self.conf["wait_timeout"]
+        while time.monotonic() < deadline:
+            message = self.fetch_latest_message(mailbox)
+            if message:
+                code = message.get("verification_code")
+                if code:
+                    return str(code)
+            time.sleep(max(0.2, self.conf["wait_interval"]))
+        return None
 
 
 class Hotmail007Provider(BaseMailProvider):
@@ -148,8 +192,7 @@ class Hotmail007Provider(BaseMailProvider):
         super().__init__(conf, str(entry.get("provider_ref") or ""))
         self.api_base = str(entry.get("api_base") or "https://gapi.hotmail007.com").strip().rstrip("/")
         self.api_key = str(entry.get("api_key") or "").strip()
-        self.mail_type = str(entry.get("mail_type") or "outlook Trusted Graph").strip()
-        self.mail_mode = str(entry.get("mail_mode") or "graph").strip().lower()
+        self.product_id = self._parse_product_id(entry.get("product_id"))
 
         if not self.api_key:
             raise RuntimeError("Hotmail007 需要配置 api_key")
@@ -196,14 +239,60 @@ class Hotmail007Provider(BaseMailProvider):
         except Exception as e:
             raise RuntimeError(f"Hotmail007 API 请求失败: {e}")
 
+    @staticmethod
+    def _parse_stock_count(value: Any) -> int:
+        try:
+            return max(0, int(value))
+        except Exception:
+            return 0
+
+    @staticmethod
+    def _parse_product_id(value: Any) -> int:
+        text = str(value or "").strip()
+        if not text:
+            raise RuntimeError("Hotmail007 需要配置 product_id")
+        try:
+            product_id = int(text)
+        except Exception as exc:
+            raise RuntimeError("Hotmail007 product_id 必须是正整数") from exc
+        if product_id <= 0:
+            raise RuntimeError("Hotmail007 product_id 必须是正整数")
+        return product_id
+
+    def _stock_count(self) -> int:
+        data = self._api_get("open/stock", productId=self.product_id)
+
+        if isinstance(data, dict):
+            if "stock" in data:
+                return self._parse_stock_count(data.get("stock"))
+            items = data.get("items") or data.get("list") or data.get("products")
+            if isinstance(items, list):
+                data = items
+
+        if isinstance(data, list):
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                item_product_id = item.get("productId") or item.get("product_id") or item.get("id")
+                if str(item_product_id or "").strip() == str(self.product_id):
+                    return self._parse_stock_count(
+                        item.get("stock") or item.get("count") or item.get("quantity") or item.get("available")
+                    )
+
+        raise RuntimeError(f"Hotmail007 库存查询未返回 product_id={self.product_id} 的库存")
+
     def create_mailbox(self, username: str | None = None) -> dict[str, Any]:
         """购买一个 Microsoft 邮箱（会消耗余额！）
 
         注意：username 参数被忽略，因为 Hotmail007 返回的是已购买的邮箱账号
         """
+        stock = self._stock_count()
+        if stock <= 0:
+            raise RuntimeError(f"Hotmail007 product_id={self.product_id} 库存不足")
+
         data = self._api_get(
             "open/buy",
-            productId=self._get_product_id(),
+            productId=self.product_id,
             quantity=1
         )
 
@@ -236,59 +325,48 @@ class Hotmail007Provider(BaseMailProvider):
             "label": f"Hotmail007 ({email_addr})"
         }
 
-    def _get_product_id(self) -> int:
-        """获取商品 ID（根据 mail_type 查询库存）"""
-        try:
-            data = self._api_get("open/stock", mailType=self.mail_type)
-
-            if isinstance(data, list):
-                for item in data:
-                    if isinstance(item, dict):
-                        item_type = str(item.get("mailType") or "").strip()
-                        if item_type.lower() == self.mail_type.lower():
-                            product_id = item.get("productId")
-                            if product_id:
-                                return int(product_id)
-
-                # 如果没找到匹配的，取第一个有库存的
-                for item in data:
-                    if isinstance(item, dict) and item.get("stock", 0) > 0:
-                        return int(item.get("productId", 1))
-
-            # 默认返回 1
-            return 1
-        except Exception:
-            # 如果获取失败，使用默认值
-            return 1
-
     def fetch_latest_message(self, mailbox: dict[str, Any]) -> dict[str, Any] | None:
-        """通过 Microsoft Graph API 获取最新邮件"""
-        try:
-            account_str = f"{mailbox['address']}:{mailbox.get('password', '')}:{mailbox['refresh_token']}:{mailbox['client_id']}"
+        """获取最新邮件（同时查询收件箱和垃圾邮件）"""
+        account_str = f"{mailbox['address']}:{mailbox.get('password', '')}:{mailbox['refresh_token']}:{mailbox['client_id']}"
 
-            data = self._api_get(
-                "open/mail/latest",
-                account=account_str,
-                folder="inbox"
-            )
+        # OpenAI 验证码可能进收件箱或垃圾箱，两个都要查
+        candidates = []
+        for folder in ("inbox", "junkemail"):
+            try:
+                params = {"account": account_str, "folder": folder}
+                # 用 start_timestamp 过滤注册前的旧邮件
+                code_not_before = mailbox.get("_code_not_before")
+                if isinstance(code_not_before, datetime):
+                    params["start_timestamp"] = int(code_not_before.timestamp())
 
-            if not data:
-                return None
+                data = self._api_get("open/mail/latest", **params)
+                if data and (data.get("subject") or data.get("text") or data.get("html")):
+                    candidates.append(data)
+            except Exception:
+                continue
 
-            return {
-                "provider": self.name,
-                "mailbox": mailbox["address"],
-                "message_id": "",  # Hotmail007 不返回 message_id
-                "subject": str(data.get("subject") or ""),
-                "sender": str(data.get("from") or ""),
-                "to": [mailbox["address"]],
-                "text_content": str(data.get("text") or ""),
-                "html_content": str(data.get("html") or ""),
-                "received_at": _parse_received_at(data.get("receivedAt")),
-                "raw": data
-            }
-        except Exception:
+        if not candidates:
             return None
+
+        # 取最新的一封（按 receivedAt 排序）
+        candidates.sort(
+            key=lambda d: _parse_received_at(d.get("receivedAt")) or datetime.fromtimestamp(0, tz=timezone.utc),
+            reverse=True
+        )
+        data = candidates[0]
+
+        return {
+            "provider": self.name,
+            "mailbox": mailbox["address"],
+            "message_id": "",  # Hotmail007 不返回 message_id
+            "subject": str(data.get("subject") or ""),
+            "sender": str(data.get("from") or ""),
+            "to": [mailbox["address"]],
+            "text_content": str(data.get("text") or ""),
+            "html_content": str(data.get("html") or ""),
+            "received_at": _parse_received_at(data.get("receivedAt")),
+            "raw": data
+        }
 
 
 class MSAccountManagerProvider(BaseMailProvider):
@@ -304,15 +382,15 @@ class MSAccountManagerProvider(BaseMailProvider):
         super().__init__(conf, str(entry.get("provider_ref") or ""))
         self.api_base = str(entry.get("api_base") or "").strip().rstrip("/")
         self.api_key = str(entry.get("api_key") or "").strip()
-        self.mail_mode = str(entry.get("mail_mode") or "graph").strip().lower()
-        self.proxy = str(entry.get("proxy") or "").strip()
+        self.mail_mode = str(entry.get("mail_mode") or "imap").strip().lower()
+        self.keyword = str(entry.get("keyword") or "outlook").strip()
 
         if not self.api_base or not self.api_key:
             raise RuntimeError("MSAccountManager 需要配置 api_base 和 api_key")
 
         self.session = _create_session(conf)
         self.session.headers.update({
-            "Authorization": f"Bearer {self.api_key}",
+            "x-mail-api-token": self.api_key,
             "Content-Type": "application/json",
             "User-Agent": conf["user_agent"]
         })
@@ -325,10 +403,13 @@ class MSAccountManagerProvider(BaseMailProvider):
         url = f"{self.api_base}/{path.lstrip('/')}"
 
         try:
-            if method.upper() == "GET":
+            method_upper = method.upper()
+            if method_upper == "GET":
                 resp = self.session.get(url, timeout=self.conf["request_timeout"], verify=False, **kwargs)
-            elif method.upper() == "POST":
+            elif method_upper == "POST":
                 resp = self.session.post(url, timeout=self.conf["request_timeout"], verify=False, **kwargs)
+            elif method_upper == "PATCH":
+                resp = self.session.patch(url, timeout=self.conf["request_timeout"], verify=False, **kwargs)
             else:
                 raise RuntimeError(f"不支持的请求方法: {method}")
 
@@ -344,58 +425,65 @@ class MSAccountManagerProvider(BaseMailProvider):
     def create_mailbox(self, username: str | None = None) -> dict[str, Any]:
         """从账号池获取一个可用账号
 
-        注意：username 参数被忽略，因为从已有的账号池中分配
+        注意：username 参数被忽略，从已有的账号池中分配
         """
-        payload = {"mode": self.mail_mode}
-        if self.proxy:
-            payload["proxy"] = self.proxy
+        # 获取账号列表
+        data = self._request("GET", "api/open/accounts", params={"keyword": self.keyword})
+        items = data.get("items", [])
 
-        data = self._request("POST", "api/account/acquire", json=payload)
+        if not items:
+            raise RuntimeError(f"MSAccountManager 账号池为空（keyword={self.keyword}）")
 
-        email_addr = str(data.get("email") or data.get("address") or "").strip()
-        client_id = str(data.get("client_id") or "").strip()
-        refresh_token = str(data.get("refresh_token") or "").strip()
+        # 优先选择备注为空的账号
+        account = next((acc for acc in items if not acc.get("remark")), items[0])
 
-        if not email_addr or not client_id or not refresh_token:
-            raise RuntimeError("MSAccountManager 返回数据不完整")
+        account_id = account.get("id")
+        email_addr = account.get("account") or account.get("email")
+
+        if not email_addr:
+            raise RuntimeError("MSAccountManager 返回的账号数据缺少邮箱地址")
+
+        # 标记账号为"使用中"
+        if account_id:
+            try:
+                self._request("PATCH", f"api/open/accounts/{account_id}/remark", json={"remark": "使用中"})
+            except Exception:
+                pass  # 更新备注失败不影响使用
 
         return {
             "provider": self.name,
             "provider_ref": self.provider_ref,
             "address": email_addr,
-            "client_id": client_id,
-            "refresh_token": refresh_token,
-            "password": data.get("password", ""),
+            "account_id": account_id,
+            "mode": self.mail_mode,
             "label": f"MSAccount ({email_addr})"
         }
 
     def fetch_latest_message(self, mailbox: dict[str, Any]) -> dict[str, Any] | None:
         """通过自建服务获取最新邮件"""
         try:
+            # 使用 POST /api/open/messages 接口
             data = self._request(
-                "GET",
-                "api/messages",
-                params={
-                    "email": mailbox["address"],
-                    "top": 10,
-                    "mode": self.mail_mode
+                "POST",
+                "api/open/messages",
+                json={
+                    "account": mailbox["address"],
+                    "mode": mailbox.get("mode", self.mail_mode)
                 }
             )
 
-            messages = data.get("value") or data.get("messages") or []
+            messages = data.get("items") or data.get("messages") or []
             if not messages:
                 return None
 
-            # 取最新的一封
-            messages.sort(
-                key=lambda m: _parse_received_at(m.get("receivedDateTime") or m.get("date")) or datetime.fromtimestamp(0, tz=timezone.utc),
-                reverse=True
-            )
-            mail = messages[0]
+            # 取最新的一封（假设返回的已经按时间排序）
+            mail = messages[0] if messages else None
+            if not mail:
+                return None
 
             text_content, html_content = _extract_content(mail)
 
-            # 解析发件人（兼容 Graph API 的嵌套结构和普通字符串）
+            # 解析发件人
             sender = ""
             from_field = mail.get("from")
             if isinstance(from_field, dict):
@@ -410,13 +498,13 @@ class MSAccountManagerProvider(BaseMailProvider):
             return {
                 "provider": self.name,
                 "mailbox": mailbox["address"],
-                "message_id": str(mail.get("id") or ""),
+                "message_id": str(mail.get("id") or mail.get("message_id") or ""),
                 "subject": str(mail.get("subject") or ""),
                 "sender": sender,
                 "to": [mailbox["address"]],
                 "text_content": text_content,
                 "html_content": html_content,
-                "received_at": _parse_received_at(mail.get("receivedDateTime") or mail.get("date")),
+                "received_at": _parse_received_at(mail.get("receivedDateTime") or mail.get("date") or mail.get("received_at")),
                 "raw": mail
             }
         except Exception:

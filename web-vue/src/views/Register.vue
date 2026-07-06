@@ -23,166 +23,196 @@
         description="读取邮箱来源、任务参数和运行状态。"
       />
 
-      <div v-else-if="registerConfig" class="register-layout">
-        <div class="register-config-column">
-          <FormSection title="任务参数" density="roomy">
-            <div class="register-form-grid">
-              <label class="register-field">
-                <span class="register-label">任务模式</span>
-                <GroupedSelectMenu
-                  v-model="registerConfig.mode"
-                  :groups="registerModeGroups"
-                  selected-indicator="none"
-                  :disabled="registerConfig.enabled"
-                  block
-                />
-              </label>
+      <div v-else-if="registerConfig" class="register-workspace">
+        <div class="register-summary-strip">
+          <article class="register-summary-item">
+            <span class="register-summary-label">任务状态</span>
+            <strong>{{ registerConfig.enabled ? '运行中' : '已停止' }}</strong>
+            <span>{{ registerRuntimeHint }}</span>
+          </article>
+          <article class="register-summary-item">
+            <span class="register-summary-label">邮箱来源</span>
+            <strong>{{ enabledProviderCount }} / {{ registerProviders.length }}</strong>
+            <span>{{ enabledProviderIssueCount ? `缺 ${enabledProviderIssueCount} 项配置` : '配置完整' }}</span>
+          </article>
+          <article class="register-summary-item">
+            <span class="register-summary-label">任务模式</span>
+            <strong>{{ registerModeLabel(registerConfig.mode) }}</strong>
+            <span>{{ registerTargetText }}</span>
+          </article>
+          <article class="register-summary-item">
+            <span class="register-summary-label">自动注册</span>
+            <strong>{{ autoRegisterConfig.enabled ? '已启用' : '未启用' }}</strong>
+            <span>{{ autoRegisterStatus.running ? '触发中' : `累计 ${autoRegisterStatus.total_auto_registered || 0}` }}</span>
+          </article>
+        </div>
 
-              <label v-if="registerConfig.mode === 'total'" class="register-field">
-                <span class="register-label">注册总数</span>
-                <Input
-                  v-model.number="registerConfig.total"
-                  type="number"
-                  min="1"
-                  block
-                  :disabled="registerConfig.enabled || registerConfig.mode !== 'total'"
-                />
-              </label>
+        <div class="register-layout">
+          <div class="register-config-column">
+            <FormSection title="任务与请求" density="roomy">
+              <div class="register-config-matrix">
+                <div class="register-config-group">
+                  <div class="register-provider-section-title">任务参数</div>
+                  <div class="register-form-grid">
+                    <label class="register-field">
+                      <span class="register-label">任务模式</span>
+                      <GroupedSelectMenu
+                        v-model="registerConfig.mode"
+                        :groups="registerModeGroups"
+                        selected-indicator="none"
+                        :disabled="registerConfig.enabled"
+                        block
+                      />
+                    </label>
 
-              <label v-else-if="registerConfig.mode === 'quota'" class="register-field">
-                <span class="register-label">目标剩余额度</span>
-                <Input
-                  v-model.number="registerConfig.target_quota"
-                  type="number"
-                  min="1"
-                  block
-                  :disabled="registerConfig.enabled"
-                />
-              </label>
+                    <label v-if="registerConfig.mode === 'total'" class="register-field">
+                      <span class="register-label">注册总数</span>
+                      <Input
+                        v-model.number="registerConfig.total"
+                        type="number"
+                        min="1"
+                        block
+                        :disabled="registerConfig.enabled || registerConfig.mode !== 'total'"
+                      />
+                    </label>
 
-              <label v-else class="register-field">
-                <span class="register-label">目标可用账号</span>
-                <Input
-                  v-model.number="registerConfig.target_available"
-                  type="number"
-                  min="1"
-                  block
-                  :disabled="registerConfig.enabled"
-                />
-              </label>
+                    <label v-else-if="registerConfig.mode === 'quota'" class="register-field">
+                      <span class="register-label">目标剩余额度</span>
+                      <Input
+                        v-model.number="registerConfig.target_quota"
+                        type="number"
+                        min="1"
+                        block
+                        :disabled="registerConfig.enabled"
+                      />
+                    </label>
 
-              <label class="register-field">
-                <span class="register-label">线程数</span>
-                <Input
-                  v-model.number="registerConfig.threads"
-                  type="number"
-                  min="1"
-                  block
-                  :disabled="registerConfig.enabled"
-                />
-              </label>
+                    <label v-else class="register-field">
+                      <span class="register-label">目标可用账号</span>
+                      <Input
+                        v-model.number="registerConfig.target_available"
+                        type="number"
+                        min="1"
+                        block
+                        :disabled="registerConfig.enabled"
+                      />
+                    </label>
 
-              <label v-if="registerConfig.mode !== 'total'" class="register-field">
-                <span class="register-label">检查间隔（秒）</span>
-                <Input
-                  v-model.number="registerConfig.check_interval"
-                  type="number"
-                  min="1"
-                  block
-                  :disabled="registerConfig.enabled"
-                />
-              </label>
+                    <label class="register-field">
+                      <span class="register-label">线程数</span>
+                      <Input
+                        v-model.number="registerConfig.threads"
+                        type="number"
+                        min="1"
+                        block
+                        :disabled="registerConfig.enabled"
+                      />
+                    </label>
 
-              <label class="register-field">
-                <span class="register-label">注册代理</span>
-                <GroupedSelectMenu
-                  :model-value="registerProxyMode"
-                  :groups="registerProxyModeGroups"
-                  selected-indicator="none"
-                  :disabled="registerConfig.enabled"
-                  block
-                  @update:model-value="setRegisterProxyMode"
-                />
-              </label>
+                    <label v-if="registerConfig.mode !== 'total'" class="register-field">
+                      <span class="register-label">检查间隔（秒）</span>
+                      <Input
+                        v-model.number="registerConfig.check_interval"
+                        type="number"
+                        min="1"
+                        block
+                        :disabled="registerConfig.enabled"
+                      />
+                    </label>
 
-              <label v-if="registerProxyMode === 'group'" class="register-field">
-                <span class="register-label">代理组</span>
-                <GroupedSelectMenu
-                  :model-value="selectedRegisterProxyGroupId"
-                  :groups="registerProxyGroupGroups"
-                  selected-indicator="none"
-                  :disabled="registerConfig.enabled"
-                  block
-                  @update:model-value="selectRegisterProxyGroup"
-                />
-              </label>
+                    <label class="register-field">
+                      <span class="register-label">注册代理</span>
+                      <GroupedSelectMenu
+                        :model-value="registerProxyMode"
+                        :groups="registerProxyModeGroups"
+                        selected-indicator="none"
+                        :disabled="registerConfig.enabled"
+                        block
+                        @update:model-value="setRegisterProxyMode"
+                      />
+                    </label>
 
-              <label v-else-if="registerProxyMode === 'custom'" class="register-field">
-                <span class="register-label">自定义代理</span>
-                <Input
-                  :model-value="customRegisterProxyInput"
-                  block
-                  root-class="font-mono"
-                  placeholder="http://127.0.0.1:7890"
-                  :disabled="registerConfig.enabled"
-                  @update:model-value="setCustomRegisterProxyInput"
-                />
-              </label>
+                    <label v-if="registerProxyMode === 'group'" class="register-field">
+                      <span class="register-label">代理组</span>
+                      <GroupedSelectMenu
+                        :model-value="selectedRegisterProxyGroupId"
+                        :groups="registerProxyGroupGroups"
+                        selected-indicator="none"
+                        :disabled="registerConfig.enabled"
+                        block
+                        @update:model-value="selectRegisterProxyGroup"
+                      />
+                    </label>
 
-              <p class="register-proxy-hint register-field--full">
-                {{ registerProxyHint }}
-              </p>
-            </div>
-          </FormSection>
+                    <label v-else-if="registerProxyMode === 'custom'" class="register-field">
+                      <span class="register-label">自定义代理</span>
+                      <Input
+                        :model-value="customRegisterProxyInput"
+                        block
+                        root-class="font-mono"
+                        placeholder="http://127.0.0.1:7890"
+                        :disabled="registerConfig.enabled"
+                        @update:model-value="setCustomRegisterProxyInput"
+                      />
+                    </label>
 
-          <FormSection title="邮箱请求" density="roomy">
-            <div class="register-form-grid register-form-grid--mail">
-              <label class="register-field">
-                <span class="register-label">请求超时（秒）</span>
-                <Input
-                  v-model.number="registerConfig.mail.request_timeout"
-                  type="number"
-                  min="1"
-                  block
-                  :disabled="registerConfig.enabled"
-                />
-              </label>
+                    <p class="register-proxy-hint register-field--full">
+                      {{ registerProxyHint }}
+                    </p>
+                  </div>
+                </div>
 
-              <label class="register-field">
-                <span class="register-label">验证码等待（秒）</span>
-                <Input
-                  v-model.number="registerConfig.mail.wait_timeout"
-                  type="number"
-                  min="1"
-                  block
-                  :disabled="registerConfig.enabled"
-                />
-              </label>
+                <div class="register-config-group register-config-group--request">
+                  <div class="register-provider-section-title">邮箱请求</div>
+                  <div class="register-form-grid register-form-grid--mail">
+                    <label class="register-field">
+                      <span class="register-label">请求超时（秒）</span>
+                      <Input
+                        v-model.number="registerConfig.mail.request_timeout"
+                        type="number"
+                        min="1"
+                        block
+                        :disabled="registerConfig.enabled"
+                      />
+                    </label>
 
-              <label class="register-field">
-                <span class="register-label">轮询间隔（秒）</span>
-                <Input
-                  v-model.number="registerConfig.mail.wait_interval"
-                  type="number"
-                  min="1"
-                  step="0.2"
-                  block
-                  :disabled="registerConfig.enabled"
-                />
-              </label>
+                    <label class="register-field">
+                      <span class="register-label">验证码等待（秒）</span>
+                      <Input
+                        v-model.number="registerConfig.mail.wait_timeout"
+                        type="number"
+                        min="1"
+                        block
+                        :disabled="registerConfig.enabled"
+                      />
+                    </label>
 
-              <label class="register-field register-field--full">
-                <span class="register-label">请求 User-Agent</span>
-                <Input
-                  v-model.trim="registerConfig.mail.user_agent"
-                  block
-                  root-class="font-mono"
-                  placeholder="默认浏览器 UA"
-                  :disabled="registerConfig.enabled"
-                />
-              </label>
-            </div>
-          </FormSection>
+                    <label class="register-field">
+                      <span class="register-label">轮询间隔（秒）</span>
+                      <Input
+                        v-model.number="registerConfig.mail.wait_interval"
+                        type="number"
+                        min="1"
+                        step="0.2"
+                        block
+                        :disabled="registerConfig.enabled"
+                      />
+                    </label>
+
+                    <label class="register-field register-field--full">
+                      <span class="register-label">请求 User-Agent</span>
+                      <Input
+                        v-model.trim="registerConfig.mail.user_agent"
+                        block
+                        root-class="font-mono"
+                        placeholder="默认浏览器 UA"
+                        :disabled="registerConfig.enabled"
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </FormSection>
 
           <FormSection title="邮箱来源" density="roomy">
             <template #actions>
@@ -209,7 +239,8 @@
                 density="normal"
               >
                 <div class="register-provider-head">
-                  <div class="min-w-0">
+                  <span class="register-provider-index">{{ index + 1 }}</span>
+                  <div class="register-provider-copy">
                     <div class="register-provider-title">
                       <span>{{ providerTitle(provider, index) }}</span>
                       <MetaChip size="xs" tone="muted">{{ providerTypeLabel(providerType(provider)) }}</MetaChip>
@@ -219,6 +250,9 @@
                       </MetaChip>
                       <MetaChip v-else size="xs" tone="success">可启动</MetaChip>
                     </div>
+                    <p class="register-provider-subtitle">
+                      {{ providerSummary(provider) }}
+                    </p>
                   </div>
                   <div class="register-provider-actions">
                     <Checkbox v-model="provider.enable" :disabled="registerConfig.enabled">
@@ -244,134 +278,180 @@
                   缺少：{{ providerRequirementMessages(provider).join('、') }}
                 </SurfaceBox>
 
-                <div class="register-provider-section">
-                  <div class="register-provider-section-title">基础配置</div>
+                <div class="register-provider-body">
+                  <section class="register-provider-panel">
+                    <div class="register-provider-panel-head">
+                      <span>连接信息</span>
+                      <p>{{ providerConnectionHint(provider) }}</p>
+                    </div>
+                    <div class="register-form-grid register-form-grid--provider-main">
+                      <label class="register-field">
+                        <span class="register-label">类型</span>
+                        <GroupedSelectMenu
+                          :model-value="provider.type || 'cloudflare_temp_email'"
+                          :groups="providerTypeGroups"
+                          selected-indicator="none"
+                          :disabled="registerConfig.enabled"
+                          block
+                          @update:model-value="value => updateProviderType(index, String(value))"
+                        />
+                      </label>
 
-                  <SurfaceBox
-                    v-if="providerType(provider) === 'luckmail' || providerType(provider) === 'hotmail007'"
-                    class="register-provider-message"
-                    tone="warning"
-                    density="compact"
+                      <label v-if="providerUsesApiBase(provider)" class="register-field">
+                        <span class="register-label">{{ apiBaseLabel(provider) }}</span>
+                        <Input
+                          v-model.trim="provider.api_base"
+                          block
+                          root-class="font-mono"
+                          :disabled="registerConfig.enabled"
+                          :placeholder="apiBasePlaceholder(provider)"
+                        />
+                      </label>
+                    </div>
+                  </section>
+
+                  <section
+                    v-if="providerUsesCredentialSection(provider) && !providerUsesCredentialOptionPanel(provider)"
+                    class="register-provider-panel register-provider-panel--soft"
                   >
-                    ⚠️ 付费服务：每次注册会购买邮箱并消耗余额，不参与自动注册
-                  </SurfaceBox>
+                    <div class="register-provider-panel-head">
+                      <span>鉴权信息</span>
+                      <p>{{ providerCredentialHint(provider) }}</p>
+                    </div>
+                    <div class="register-form-grid register-form-grid--two">
+                      <label v-if="providerUsesAdminPassword(provider)" class="register-field">
+                        <span class="register-label">Admin Password</span>
+                        <Input
+                          v-model.trim="provider.admin_password"
+                          type="password"
+                          block
+                          root-class="font-mono"
+                          autocomplete="off"
+                          :disabled="registerConfig.enabled"
+                          placeholder="调用接口所需密码"
+                        />
+                      </label>
 
-                  <div class="register-form-grid register-form-grid--two">
-                    <label class="register-field">
-                      <span class="register-label">类型</span>
-                      <GroupedSelectMenu
-                        :model-value="provider.type || 'cloudflare_temp_email'"
-                        :groups="providerTypeGroups"
-                        selected-indicator="none"
-                        :disabled="registerConfig.enabled"
-                        block
-                        @update:model-value="value => updateProviderType(index, String(value))"
-                      />
-                    </label>
+                      <label v-if="providerUsesApiKey(provider)" class="register-field">
+                        <span class="register-label">API Key</span>
+                        <Input
+                          v-model.trim="provider.api_key"
+                          type="password"
+                          block
+                          root-class="font-mono"
+                          autocomplete="off"
+                          :disabled="registerConfig.enabled"
+                          placeholder="调用接口所需密钥"
+                        />
+                      </label>
+                    </div>
+                  </section>
 
-                    <label v-if="providerUsesApiBase(provider)" class="register-field">
-                      <span class="register-label">{{ apiBaseLabel(provider) }}</span>
-                      <Input
-                        v-model.trim="provider.api_base"
-                        block
-                        root-class="font-mono"
-                        :disabled="registerConfig.enabled"
-                        :placeholder="apiBasePlaceholder(provider)"
-                      />
-                    </label>
+                  <section
+                    v-if="providerUsesOptionSection(provider)"
+                    :class="[
+                      'register-provider-panel',
+                      providerOptionPanelWide(provider) ? 'register-provider-panel--wide' : 'register-provider-panel--accent',
+                    ]"
+                  >
+                    <div class="register-provider-panel-head">
+                      <span>{{ providerOptionPanelTitle(provider) }}</span>
+                      <p>{{ providerOptionHint(provider) }}</p>
+                    </div>
+                    <div class="register-form-grid register-form-grid--provider-options">
+                      <label v-if="providerUsesCredentialOptionPanel(provider)" class="register-field">
+                        <span class="register-label">API Key</span>
+                        <Input
+                          v-model.trim="provider.api_key"
+                          type="password"
+                          block
+                          root-class="font-mono"
+                          autocomplete="off"
+                          :disabled="registerConfig.enabled"
+                          placeholder="调用接口所需密钥"
+                        />
+                      </label>
 
-                    <label v-if="providerUsesAdminPassword(provider)" class="register-field">
-                      <span class="register-label">Admin Password</span>
-                      <Input
-                        v-model.trim="provider.admin_password"
-                        block
-                        root-class="font-mono"
-                        :disabled="registerConfig.enabled"
-                      />
-                    </label>
+                      <label v-if="providerType(provider) === 'hotmail007'" class="register-field">
+                        <span class="register-label-row">
+                          <span class="register-label">productId</span>
+                          <HelpTip text="用于 Hotmail007 open/stock 和 open/buy 的 productId" />
+                        </span>
+                        <Input
+                          v-model.number="provider.product_id"
+                          type="number"
+                          min="1"
+                          block
+                          :disabled="registerConfig.enabled"
+                          placeholder="从库存接口获取"
+                        />
+                        <span class="register-field-hint">启动前先查库存，有库存才购买；每次固定购买 1 个。</span>
+                      </label>
 
-                    <label v-if="providerUsesApiKey(provider)" class="register-field">
-                      <span class="register-label">API Key</span>
-                      <Input
-                        v-model.trim="provider.api_key"
-                        block
-                        root-class="font-mono"
-                        :disabled="registerConfig.enabled"
-                      />
-                    </label>
+                      <label v-if="providerUsesMailMode(provider)" class="register-field">
+                        <span class="register-label">读取方式</span>
+                        <GroupedSelectMenu
+                          v-model="provider.mail_mode"
+                          :groups="mailModeGroups"
+                          selected-indicator="none"
+                          :disabled="registerConfig.enabled"
+                          block
+                        />
+                      </label>
 
-                    <label v-if="providerType(provider) === 'hotmail007'" class="register-field">
-                      <span class="register-label">邮箱类型</span>
-                      <Input
-                        v-model.trim="provider.mail_type"
-                        block
-                        :disabled="registerConfig.enabled"
-                        placeholder="outlook Trusted Graph"
-                      />
-                    </label>
+                      <label v-if="providerType(provider) === 'luckmail'" class="register-field">
+                        <span class="register-label">邮箱类型</span>
+                        <Input
+                          v-model.trim="provider.email_type"
+                          block
+                          :disabled="registerConfig.enabled"
+                          placeholder="可留空，如 ms_imap / ms_graph"
+                        />
+                      </label>
 
-                    <label v-if="providerUsesMailMode(provider)" class="register-field">
-                      <span class="register-label">读取方式</span>
-                      <GroupedSelectMenu
-                        v-model="provider.mail_mode"
-                        :groups="mailModeGroups"
-                        selected-indicator="none"
-                        :disabled="registerConfig.enabled"
-                        block
-                      />
-                    </label>
+                      <label v-if="providerType(provider) === 'luckmail'" class="register-field">
+                        <span class="register-label">邮箱域名</span>
+                        <Input
+                          v-model.trim="provider.mail_domain"
+                          block
+                          :disabled="registerConfig.enabled"
+                          placeholder="可留空"
+                        />
+                      </label>
 
-                    <label v-if="providerType(provider) === 'luckmail'" class="register-field">
-                      <span class="register-label">邮箱类型</span>
-                      <Input
-                        v-model.trim="provider.email_type"
-                        block
-                        :disabled="registerConfig.enabled"
-                        placeholder="可留空，如 ms_imap / ms_graph"
-                      />
-                    </label>
+                      <label v-if="providerType(provider) === 'luckmail'" class="register-field">
+                        <span class="register-label">最大重试次数</span>
+                        <Input
+                          v-model.number="provider.max_retry"
+                          type="number"
+                          min="1"
+                          block
+                          :disabled="registerConfig.enabled"
+                          placeholder="3"
+                        />
+                      </label>
 
-                    <label v-if="providerType(provider) === 'luckmail'" class="register-field">
-                      <span class="register-label">邮箱域名</span>
-                      <Input
-                        v-model.trim="provider.mail_domain"
-                        block
-                        :disabled="registerConfig.enabled"
-                        placeholder="可留空"
-                      />
-                    </label>
+                      <label v-if="providerUsesProxy(provider)" class="register-field">
+                        <span class="register-label">代理</span>
+                        <Input
+                          v-model.trim="provider.proxy"
+                          block
+                          root-class="font-mono"
+                          :disabled="registerConfig.enabled"
+                          placeholder="可选，留空使用全局代理"
+                        />
+                      </label>
+                    </div>
+                  </section>
 
-                    <label v-if="providerType(provider) === 'luckmail'" class="register-field">
-                      <span class="register-label">最大重试次数</span>
-                      <Input
-                        v-model.number="provider.max_retry"
-                        type="number"
-                        min="1"
-                        block
-                        :disabled="registerConfig.enabled"
-                        placeholder="3"
-                      />
-                    </label>
-
-                    <label v-if="providerUsesProxy(provider)" class="register-field">
-                      <span class="register-label">代理</span>
-                      <Input
-                        v-model.trim="provider.proxy"
-                        block
-                        root-class="font-mono"
-                        :disabled="registerConfig.enabled"
-                        placeholder="可选，留空使用全局代理"
-                      />
-                    </label>
-                  </div>
-                </div>
-
-                <div
-                  v-if="providerUsesDomainList(provider)"
-                  class="register-provider-section"
-                >
-                  <div class="register-provider-section-title">域名配置</div>
-                  <div class="register-provider-stack">
+                  <section
+                    v-if="providerUsesDomainList(provider)"
+                    class="register-provider-panel register-provider-panel--wide"
+                  >
+                    <div class="register-provider-panel-head">
+                      <span>域名池</span>
+                      <p>{{ providerDomainHint(provider) }}</p>
+                    </div>
                     <label class="register-field">
                       <span class="register-label">{{ domainLabel(provider) }}</span>
                       <textarea
@@ -382,200 +462,215 @@
                         @input="updateProviderArray(index, 'domain', $event)"
                       ></textarea>
                     </label>
-                  </div>
+                  </section>
                 </div>
               </FormSection>
             </div>
           </FormSection>
 
           <FormSection title="自动注册配置" subtitle="图片生图遇到无可用账号时自动触发注册流程" density="roomy">
-            <div class="settings-check-grid">
-              <div class="settings-check-item">
-                <Checkbox v-model="autoRegisterConfig.enabled">
-                  启用自动注册
-                </Checkbox>
-                <HelpTip text="总开关，关闭后不会触发任何自动注册" />
+            <div class="register-auto-layout">
+              <div class="register-auto-main">
+                <div class="register-auto-switch">
+                  <div class="register-auto-switch-copy">
+                    <span class="register-summary-label">总开关</span>
+                    <strong>{{ autoRegisterConfig.enabled ? '已启用' : '未启用' }}</strong>
+                    <span>{{ autoRegisterStatus.running ? '当前触发中' : autoRegisterStatus.last_triggered_at ? `上次 ${formatDateTime(autoRegisterStatus.last_triggered_at)}` : '未触发' }}</span>
+                  </div>
+                  <Checkbox v-model="autoRegisterConfig.enabled">
+                    启用
+                  </Checkbox>
+                </div>
+
+                <div class="register-auto-section">
+                  <div class="register-provider-section-title">触发条件</div>
+                  <div class="register-auto-trigger-grid">
+                    <div class="register-auto-check">
+                      <Checkbox v-model="autoRegisterConfig.trigger_conditions.no_account">
+                        账号池为空
+                      </Checkbox>
+                    </div>
+                    <div class="register-auto-check">
+                      <Checkbox v-model="autoRegisterConfig.trigger_conditions.all_quota_exhausted">
+                        所有账号额度耗尽
+                      </Checkbox>
+                    </div>
+                    <div class="register-auto-check">
+                      <Checkbox v-model="autoRegisterConfig.trigger_conditions.all_accounts_invalid">
+                        所有账号状态异常
+                      </Checkbox>
+                    </div>
+                    <div class="register-auto-check">
+                      <Checkbox v-model="autoRegisterConfig.trigger_conditions.all_accounts_rate_limited">
+                        所有账号限流中
+                      </Checkbox>
+                    </div>
+                    <div class="register-auto-check">
+                      <Checkbox v-model="autoRegisterConfig.trigger_conditions.all_accounts_busy">
+                        所有账号并发满
+                      </Checkbox>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="register-auto-section">
+                  <div class="register-provider-section-title">调度参数</div>
+                  <div class="register-form-grid register-form-grid--auto">
+                    <label class="register-field">
+                      <span class="register-label">每次注册数量</span>
+                      <Input
+                        v-model.number="autoRegisterConfig.register_count"
+                        type="number"
+                        min="1"
+                        max="5"
+                        block
+                      />
+                    </label>
+
+                    <label class="register-field">
+                      <span class="register-label">冷却期（秒）</span>
+                      <Input
+                        v-model.number="autoRegisterConfig.cooldown_seconds"
+                        type="number"
+                        min="60"
+                        block
+                      />
+                    </label>
+
+                    <label class="register-field">
+                      <span class="register-label-row">
+                        <span class="register-label">账号池上限</span>
+                        <HelpTip text="0 表示不限制" />
+                      </span>
+                      <Input
+                        v-model.number="autoRegisterConfig.max_total_accounts"
+                        type="number"
+                        min="0"
+                        block
+                      />
+                    </label>
+
+                    <label class="register-field">
+                      <span class="register-label-row">
+                        <span class="register-label">可用账号数阈值</span>
+                        <HelpTip text="可用账号数低于此值时触发，0 表示不启用" />
+                      </span>
+                      <Input
+                        v-model.number="autoRegisterConfig.min_available_accounts"
+                        type="number"
+                        min="0"
+                        block
+                      />
+                    </label>
+
+                    <label class="register-field">
+                      <span class="register-label">最大连续失败次数</span>
+                      <Input
+                        v-model.number="autoRegisterConfig.max_failures"
+                        type="number"
+                        min="1"
+                        block
+                      />
+                    </label>
+                  </div>
+                </div>
               </div>
-            </div>
 
-            <label class="register-field">
-              <span class="register-label">触发条件</span>
-              <div class="settings-check-grid settings-check-grid--single mt-2">
-                <div class="settings-check-item">
-                  <Checkbox v-model="autoRegisterConfig.trigger_conditions.no_account">
-                    账号池为空
-                  </Checkbox>
+              <aside class="register-auto-status">
+                <div class="register-auto-status-head">
+                  <span class="register-summary-label">运行状态</span>
+                  <StateBadge :tone="autoRegisterStatus.running ? 'warning' : 'muted'" shape="rounded" size="sm">
+                    {{ autoRegisterStatus.running ? '运行中' : '空闲' }}
+                  </StateBadge>
                 </div>
-                <div class="settings-check-item">
-                  <Checkbox v-model="autoRegisterConfig.trigger_conditions.all_quota_exhausted">
-                    所有账号额度耗尽
-                  </Checkbox>
+
+                <dl class="register-auto-status-grid">
+                  <div>
+                    <dt>上次触发</dt>
+                    <dd>{{ formatDateTime(autoRegisterStatus.last_triggered_at) }}</dd>
+                  </div>
+                  <div>
+                    <dt>触发原因</dt>
+                    <dd>{{ formatTriggerReason(autoRegisterStatus.last_trigger_reason) }}</dd>
+                  </div>
+                  <div>
+                    <dt>连续失败</dt>
+                    <dd :class="autoRegisterStatus.consecutive_failures > 0 ? 'text-rose-600' : ''">
+                      {{ autoRegisterStatus.consecutive_failures }}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>累计注册</dt>
+                    <dd>{{ autoRegisterStatus.total_auto_registered }}</dd>
+                  </div>
+                </dl>
+
+                <div class="register-auto-actions">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    :disabled="testingAutoRegister"
+                    @click="testAutoRegister"
+                  >
+                    {{ testingAutoRegister ? '测试中...' : '测试自动注册' }}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    :disabled="autoRegisterStatus.consecutive_failures === 0"
+                    @click="resetAutoRegisterFailures"
+                  >
+                    重置失败计数
+                  </Button>
                 </div>
-                <div class="settings-check-item">
-                  <Checkbox v-model="autoRegisterConfig.trigger_conditions.all_accounts_invalid">
-                    所有账号状态异常
-                  </Checkbox>
-                </div>
-                <div class="settings-check-item">
-                  <Checkbox v-model="autoRegisterConfig.trigger_conditions.all_accounts_rate_limited">
-                    所有账号限流中
-                  </Checkbox>
-                </div>
-                <div class="settings-check-item">
-                  <Checkbox v-model="autoRegisterConfig.trigger_conditions.all_accounts_busy">
-                    所有账号并发满
-                  </Checkbox>
-                </div>
-              </div>
-            </label>
 
-            <div class="register-form-grid">
-              <label class="register-field">
-                <span class="register-label">每次注册数量</span>
-                <Input
-                  v-model.number="autoRegisterConfig.register_count"
-                  type="number"
-                  min="1"
-                  max="5"
-                  block
-                />
-              </label>
-
-              <label class="register-field">
-                <span class="register-label">冷却期（秒）</span>
-                <Input
-                  v-model.number="autoRegisterConfig.cooldown_seconds"
-                  type="number"
-                  min="60"
-                  block
-                />
-              </label>
-
-              <label class="register-field">
-                <span class="register-label">账号池上限</span>
-                <Input
-                  v-model.number="autoRegisterConfig.max_total_accounts"
-                  type="number"
-                  min="0"
-                  block
-                />
-                <HelpTip text="0 表示不限制" />
-              </label>
-
-              <label class="register-field">
-                <span class="register-label">可用账号数阈值</span>
-                <Input
-                  v-model.number="autoRegisterConfig.min_available_accounts"
-                  type="number"
-                  min="0"
-                  block
-                />
-                <HelpTip text="可用账号数低于此值时触发，0 表示不启用" />
-              </label>
-
-              <label class="register-field">
-                <span class="register-label">最大连续失败次数</span>
-                <Input
-                  v-model.number="autoRegisterConfig.max_failures"
-                  type="number"
-                  min="1"
-                  block
-                />
-              </label>
-            </div>
-
-            <SurfaceBox density="compact">
-              <div class="grid grid-cols-2 gap-2 text-xs">
-                <span class="text-muted-foreground">运行状态</span>
-                <span class="text-right" :class="autoRegisterStatus.running ? 'text-amber-600' : 'text-foreground'">
-                  {{ autoRegisterStatus.running ? '运行中' : '空闲' }}
-                </span>
-
-                <span class="text-muted-foreground">上次触发</span>
-                <span class="text-right text-foreground">
-                  {{ formatDateTime(autoRegisterStatus.last_triggered_at) }}
-                </span>
-
-                <span class="text-muted-foreground">触发原因</span>
-                <span class="text-right text-foreground">
-                  {{ formatTriggerReason(autoRegisterStatus.last_trigger_reason) }}
-                </span>
-
-                <span class="text-muted-foreground">连续失败</span>
-                <span class="text-right" :class="autoRegisterStatus.consecutive_failures > 0 ? 'text-rose-600' : 'text-foreground'">
-                  {{ autoRegisterStatus.consecutive_failures }}
-                </span>
-
-                <span class="text-muted-foreground">累计注册</span>
-                <span class="text-right text-emerald-600">
-                  {{ autoRegisterStatus.total_auto_registered }}
-                </span>
-              </div>
-            </SurfaceBox>
-
-            <details v-if="Object.keys(autoRegisterStatus.trigger_count_by_reason || {}).length" class="mt-3">
-              <summary class="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
-                触发统计详情
-              </summary>
-              <div class="mt-2 grid grid-cols-2 gap-2 text-xs">
-                <template v-for="(count, reason) in autoRegisterStatus.trigger_count_by_reason" :key="reason">
-                  <span class="text-muted-foreground">{{ formatTriggerReason(reason) }}</span>
-                  <span class="text-right text-foreground">{{ count }} 次</span>
-                </template>
-              </div>
-            </details>
-
-            <div class="flex gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                :disabled="testingAutoRegister"
-                @click="testAutoRegister"
-              >
-                {{ testingAutoRegister ? '测试中...' : '测试自动注册' }}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                :disabled="autoRegisterStatus.consecutive_failures === 0"
-                @click="resetAutoRegisterFailures"
-              >
-                重置失败计数
-              </Button>
+                <details v-if="Object.keys(autoRegisterStatus.trigger_count_by_reason || {}).length" class="register-auto-details">
+                  <summary>触发统计</summary>
+                  <div class="register-auto-reason-list">
+                    <template v-for="(count, reason) in autoRegisterStatus.trigger_count_by_reason" :key="reason">
+                      <span>{{ formatTriggerReason(reason) }}</span>
+                      <strong>{{ count }} 次</strong>
+                    </template>
+                  </div>
+                </details>
+              </aside>
             </div>
           </FormSection>
         </div>
 
         <aside class="register-runtime-column">
           <FormSection title="执行控制" density="roomy" class="register-runtime-section">
-            <MetricStrip
-              :items="registerMetricItems"
-              columns-class="grid-cols-2 md:grid-cols-4"
-              density="compact"
-            />
-
-            <div class="register-runtime-actions">
-              <Button
-                block
-                variant="primary"
-                :disabled="registerActionDisabled"
-                @click="toggleLegacyTask"
-              >
-                {{ registerConfig.enabled ? '停止' : '启动' }}
-              </Button>
-              <Button
-                block
-                variant="outline"
-                :disabled="legacySaving || !registerConfig || registerConfig.enabled"
-                @click="resetLegacyStats"
-              >
-                重置
-              </Button>
+            <div class="register-start-panel">
+              <div class="register-start-copy">
+                <span class="register-summary-label">当前任务</span>
+                <strong>{{ registerConfig.enabled ? '正在注册' : '等待启动' }}</strong>
+                <span>{{ registerRuntimeHint }}</span>
+              </div>
+              <div class="register-runtime-actions">
+                <Button
+                  block
+                  variant="primary"
+                  :disabled="registerActionDisabled"
+                  @click="toggleLegacyTask"
+                >
+                  {{ registerConfig.enabled ? '停止' : '启动' }}
+                </Button>
+                <Button
+                  block
+                  variant="outline"
+                  :disabled="legacySaving || !registerConfig || registerConfig.enabled"
+                  @click="resetLegacyStats"
+                >
+                  重置
+                </Button>
+              </div>
             </div>
 
-            <SurfaceBox tone="muted" density="compact">
-              {{ registerRuntimeHint }}
-            </SurfaceBox>
+            <MetricStrip
+              :items="registerMetricItems"
+              columns-class="grid-cols-2 xl:grid-cols-4"
+              density="compact"
+            />
 
             <SurfaceBox tone="muted" density="compact" class="register-runtime-tips">
               <p>Cloudflare 拦截：可在系统设置启用 FlareSolverr 清障，并确认相关容器已启动。</p>
@@ -592,6 +687,7 @@
             max-height="min(58vh, 38rem)"
           />
         </aside>
+      </div>
       </div>
     </PagePanel>
   </div>
@@ -783,7 +879,7 @@ const providerTypeKeys: Record<string, string[]> = {
   cloudflare_temp_email: ['api_base', 'admin_password', 'domain'],
   tempmail_lol: ['api_key', 'domain'],
   luckmail: ['api_base', 'api_key', 'email_type', 'mail_domain', 'max_retry'],
-  hotmail007: ['api_base', 'api_key', 'mail_type', 'mail_mode'],
+  hotmail007: ['api_base', 'api_key', 'product_id'],
   msaccount_manager: ['api_base', 'api_key', 'mail_mode', 'proxy'],
 }
 const providerLocalOnlyKeys: Record<string, string[]> = {}
@@ -828,6 +924,13 @@ const registerRuntimeHint = computed(() => {
   if (enabledProviderIssueCount.value > 0) return `还有 ${enabledProviderIssueCount.value} 项必填配置未完成。`
   if (registerConfig.value?.enabled) return '任务运行中，配置已锁定。'
   return '启动前会自动保存当前配置。'
+})
+const registerTargetText = computed(() => {
+  const config = registerConfig.value
+  if (!config) return '-'
+  if (config.mode === 'quota') return `额度 ${config.target_quota || 0}`
+  if (config.mode === 'available') return `可用账号 ${config.target_available || 0}`
+  return `${config.total || 0} 个 · ${config.threads || 0} 线程`
 })
 
 const registerMetricItems = computed(() => {
@@ -894,7 +997,7 @@ function defaultProvider(type = 'cloudflare_temp_email'): RegisterProvider {
     case 'luckmail':
       return { ...base, api_base: '', api_key: '', email_type: '', mail_domain: '', max_retry: 3 }
     case 'hotmail007':
-      return { ...base, api_base: '', api_key: '', mail_type: 'outlook Trusted Graph', mail_mode: 'graph' }
+      return { ...base, api_base: '', api_key: '', product_id: '' }
     case 'msaccount_manager':
       return { ...base, api_base: '', api_key: '', mail_mode: 'graph', proxy: '' }
     default:
@@ -923,6 +1026,71 @@ function providerTitle(provider: RegisterProvider, index: number) {
 
 function providerTypeLabel(type: string) {
   return providerTypeOptions.find(item => item.value === type)?.label || type
+}
+
+function registerModeLabel(mode: string) {
+  return registerModeOptions.find(item => item.value === mode)?.label || mode || '按数量注册'
+}
+
+function providerSummary(provider: RegisterProvider) {
+  const type = providerType(provider)
+  if (type === 'hotmail007') {
+    const productId = Number(provider.product_id)
+    return productId > 0 ? `productId ${productId} · 先查库存再购买` : '需要 productId'
+  }
+  if (type === 'luckmail') {
+    const domain = String(provider.mail_domain || '').trim()
+    return domain ? `域名 ${domain} · 最多重试 ${provider.max_retry || 3} 次` : `最多重试 ${provider.max_retry || 3} 次`
+  }
+  if (type === 'cloudflare_temp_email') return '自建临时邮箱服务 · Admin Password'
+  if (type === 'tempmail_lol') return listHasValue(provider.domain) ? 'TempMail.lol · 指定域名池' : 'TempMail.lol · 服务默认域名'
+  if (type === 'msaccount_manager') return `自建 Microsoft 账号池 · ${String(provider.mail_mode || 'graph').toUpperCase()}`
+  return providerTypeLabel(type)
+}
+
+function providerConnectionHint(provider: RegisterProvider) {
+  const type = providerType(provider)
+  if (type === 'hotmail007') return 'Hotmail007 开放接口'
+  if (type === 'luckmail') return 'LuckMail OpenAPI'
+  if (type === 'cloudflare_temp_email') return '自建临时邮箱 API'
+  if (type === 'tempmail_lol') return '官方邮箱服务'
+  if (type === 'msaccount_manager') return '自建账号池接口'
+  return providerTypeLabel(type)
+}
+
+function providerCredentialHint(provider: RegisterProvider) {
+  if (providerUsesAdminPassword(provider)) return '密码不会明文展示'
+  if (providerUsesApiKey(provider)) return 'API Key 不会明文展示'
+  return ''
+}
+
+function providerOptionHint(provider: RegisterProvider) {
+  const type = providerType(provider)
+  if (type === 'hotmail007') return '先查库存，有库存再购买'
+  if (type === 'luckmail') return '购买凭据和可选筛选'
+  if (type === 'msaccount_manager') return '读取邮箱的方式和代理'
+  return ''
+}
+
+function providerOptionPanelTitle(provider: RegisterProvider) {
+  const type = providerType(provider)
+  if (type === 'hotmail007') return '购买参数'
+  if (type === 'luckmail') return '接口参数'
+  if (type === 'msaccount_manager') return '读取参数'
+  return '服务参数'
+}
+
+function providerUsesCredentialOptionPanel(provider: RegisterProvider) {
+  return providerIsPaid(provider)
+}
+
+function providerOptionPanelWide(provider: RegisterProvider) {
+  return !providerIsPaid(provider)
+}
+
+function providerDomainHint(provider: RegisterProvider) {
+  if (providerType(provider) === 'tempmail_lol') return '可留空使用服务默认域名'
+  return '每行一个域名'
 }
 
 function providerKeysForType(type: string, includeLocalOnly = false) {
@@ -991,6 +1159,10 @@ function providerRequirementMessages(provider: RegisterProvider) {
   const requireList = (value: unknown, label: string) => {
     if (!listHasValue(value)) missing.push(label)
   }
+  const requirePositiveInteger = (value: unknown, label: string) => {
+    const number = Number(value)
+    if (!Number.isInteger(number) || number <= 0) missing.push(label)
+  }
 
   switch (type) {
     case 'cloudmail_gen':
@@ -1014,6 +1186,17 @@ function providerRequirementMessages(provider: RegisterProvider) {
       requireList(provider.domain, '基础域名')
       break
     case 'duckmail':
+      requireValue(provider.api_key, 'API Key')
+      break
+    case 'luckmail':
+      requireValue(provider.api_key, 'API Key')
+      break
+    case 'hotmail007':
+      requireValue(provider.api_key, 'API Key')
+      requirePositiveInteger(provider.product_id, 'productId')
+      break
+    case 'msaccount_manager':
+      requireValue(provider.api_base, 'API Base')
       requireValue(provider.api_key, 'API Key')
       break
     case 'gptmail':
@@ -1063,6 +1246,19 @@ function providerUsesApiKey(provider: RegisterProvider) {
   return ['tempmail_lol', 'luckmail', 'hotmail007', 'msaccount_manager'].includes(providerType(provider))
 }
 
+function providerUsesCredentialSection(provider: RegisterProvider) {
+  return providerUsesAdminPassword(provider) || providerUsesApiKey(provider)
+}
+
+function providerUsesOptionSection(provider: RegisterProvider) {
+  const type = providerType(provider)
+  return ['luckmail', 'hotmail007'].includes(type) || providerUsesMailMode(provider) || providerUsesProxy(provider)
+}
+
+function providerIsPaid(provider: RegisterProvider) {
+  return ['luckmail', 'hotmail007'].includes(providerType(provider))
+}
+
 function providerUsesPublicGptMailKey(provider: RegisterProvider) {
   return false
 }
@@ -1084,7 +1280,7 @@ function providerUsesProxy(provider: RegisterProvider) {
 }
 
 function providerUsesMailMode(provider: RegisterProvider) {
-  return ['hotmail007', 'msaccount_manager'].includes(providerType(provider))
+  return ['msaccount_manager'].includes(providerType(provider))
 }
 
 function apiBaseLabel(provider: RegisterProvider) {
@@ -1864,14 +2060,60 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.register-layout {
+.register-workspace {
   display: grid;
   gap: 18px;
 }
 
+.register-summary-strip {
+  display: grid;
+  gap: 10px;
+}
+
+.register-summary-item {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  border: 1px solid hsl(var(--border) / 0.82);
+  border-radius: 8px;
+  background: hsl(var(--card));
+  padding: 12px;
+}
+
+.register-summary-item strong {
+  overflow: hidden;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.register-summary-item span:last-child,
+.register-summary-label {
+  overflow: hidden;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (min-width: 820px) {
+  .register-summary-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.register-layout {
+  display: grid;
+  gap: 18px;
+  width: 100%;
+}
+
 @media (min-width: 1280px) {
   .register-layout {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1.08fr) minmax(27rem, 0.72fr);
     align-items: start;
   }
 }
@@ -1898,8 +2140,35 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
+.register-config-matrix {
+  display: grid;
+  gap: 16px;
+}
+
+.register-config-group {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+
+@media (min-width: 1080px) {
+  .register-config-matrix {
+    grid-template-columns: minmax(0, 1.35fr) minmax(18rem, 0.9fr);
+    align-items: start;
+  }
+
+  .register-config-group--request {
+    border-left: 1px solid hsl(var(--border) / 0.7);
+    padding-left: 16px;
+  }
+}
+
 .register-runtime-log {
   min-width: 0;
+}
+
+.register-runtime-log :deep(.runtime-log-panel__line) {
+  grid-template-columns: 6.5rem minmax(0, 1fr);
 }
 
 .register-runtime-tips {
@@ -1931,6 +2200,14 @@ onBeforeUnmount(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .register-form-grid--provider-main {
+    grid-template-columns: minmax(12rem, 0.7fr) minmax(0, 1.3fr);
+  }
+
+  .register-form-grid--provider-options {
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  }
+
   .register-form-grid--mail {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -1940,15 +2217,33 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
 }
 
+.register-form-grid--auto {
+  grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+}
+
 .register-field {
   display: grid;
   min-width: 0;
   gap: 7px;
 }
 
+.register-field-hint {
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .register-label {
   font-size: 12px;
   color: hsl(var(--muted-foreground));
+}
+
+.register-label-row {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
 }
 
 .register-proxy-hint {
@@ -1982,10 +2277,31 @@ onBeforeUnmount(() => {
 }
 
 .register-provider-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
   gap: 12px;
+}
+
+.register-provider-index {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--muted) / 0.18);
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.register-provider-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
 }
 
 .register-provider-title {
@@ -1998,8 +2314,83 @@ onBeforeUnmount(() => {
   color: hsl(var(--foreground));
 }
 
+.register-provider-subtitle {
+  margin: 0;
+  overflow: hidden;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .register-provider-message {
   margin-top: -2px;
+}
+
+.register-provider-body {
+  display: grid;
+  gap: 10px;
+}
+
+@media (min-width: 980px) {
+  .register-provider-body {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.register-provider-panel {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 12px;
+  border: 1px solid hsl(var(--border) / 0.78);
+  border-radius: 8px;
+  background: hsl(var(--background));
+  padding: 12px;
+}
+
+.register-provider-panel--soft {
+  background: hsl(var(--muted) / 0.16);
+}
+
+.register-provider-panel--accent {
+  border-color: hsl(var(--primary) / 0.28);
+  background: hsl(var(--primary) / 0.045);
+}
+
+.register-provider-panel--wide {
+  grid-column: 1 / -1;
+}
+
+.register-provider-panel-head {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid hsl(var(--border) / 0.58);
+  padding-bottom: 8px;
+}
+
+.register-provider-panel-head span {
+  color: hsl(var(--foreground));
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.register-provider-panel-head p {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .register-provider-section {
@@ -2009,7 +2400,7 @@ onBeforeUnmount(() => {
 
 .register-provider-section--soft {
   border: 1px solid hsl(var(--border) / 0.82);
-  border-radius: 12px;
+  border-radius: 8px;
   background: hsl(var(--muted) / 0.16);
   padding: 12px;
 }
@@ -2060,6 +2451,196 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+}
+
+.register-auto-layout {
+  display: grid;
+  gap: 14px;
+}
+
+@media (min-width: 1120px) {
+  .register-auto-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.42fr);
+    align-items: start;
+  }
+}
+
+.register-auto-main,
+.register-auto-section {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+
+.register-auto-switch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid hsl(var(--border) / 0.82);
+  border-radius: 8px;
+  background: hsl(var(--muted) / 0.16);
+  padding: 12px;
+}
+
+.register-auto-switch-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.register-auto-switch-copy strong {
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.register-auto-switch-copy span:last-child {
+  overflow: hidden;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.register-auto-trigger-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+}
+
+.register-auto-check {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  border: 1px solid hsl(var(--border) / 0.78);
+  border-radius: 8px;
+  background: hsl(var(--background));
+  padding: 9px 10px;
+}
+
+.register-auto-status {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  border: 1px solid hsl(var(--border) / 0.82);
+  border-radius: 8px;
+  background: hsl(var(--muted) / 0.14);
+  padding: 12px;
+}
+
+.register-auto-status-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.register-auto-status-grid {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.register-auto-status-grid div {
+  display: grid;
+  grid-template-columns: minmax(6rem, 0.7fr) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+}
+
+.register-auto-status-grid dt {
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+}
+
+.register-auto-status-grid dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: hsl(var(--foreground));
+  font-size: 12px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.register-auto-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.register-auto-details {
+  border-top: 1px solid hsl(var(--border) / 0.68);
+  padding-top: 8px;
+}
+
+.register-auto-details summary {
+  cursor: pointer;
+  width: fit-content;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+}
+
+.register-auto-reason-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  padding-top: 8px;
+  font-size: 12px;
+}
+
+.register-auto-reason-list span {
+  overflow: hidden;
+  color: hsl(var(--muted-foreground));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.register-auto-reason-list strong {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.register-start-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid hsl(var(--border) / 0.82);
+  border-radius: 8px;
+  background: hsl(var(--muted) / 0.16);
+  padding: 12px;
+}
+
+@media (min-width: 1280px) {
+  .register-start-panel {
+    grid-template-columns: minmax(0, 1fr) minmax(10.5rem, 0.42fr);
+    align-items: center;
+  }
+}
+
+@media (min-width: 1280px) {
+  .register-runtime-tips {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 12px;
+  }
+}
+
+.register-start-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.register-start-copy strong {
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.register-start-copy span:last-child {
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .register-provider-actions {
@@ -2149,14 +2730,29 @@ onBeforeUnmount(() => {
 @media (max-width: 640px) {
   .register-provider-head {
     display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
     align-items: start;
   }
 
   .register-provider-actions,
   .register-outlook-toolbar,
-  .register-runtime-actions {
+  .register-runtime-actions,
+  .register-auto-actions {
     grid-template-columns: 1fr;
     justify-content: flex-start;
+  }
+
+  .register-provider-actions {
+    grid-column: 1 / -1;
+  }
+
+  .register-provider-panel-head {
+    display: grid;
+    gap: 3px;
+  }
+
+  .register-provider-panel-head p {
+    text-align: left;
   }
 
   .register-outlook-toolbar {

@@ -26,9 +26,9 @@ export type RegisterProvider = {
   api_base?: string
   api_key?: string
   admin_password?: string
+  product_id?: number | string
   domain?: string[]
   proxy?: string
-  mail_type?: string
   mail_mode?: string
   email_type?: string
   mail_domain?: string
