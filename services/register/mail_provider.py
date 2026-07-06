@@ -2033,29 +2033,22 @@ def _next_entry(mail_config: dict) -> dict:
 
 
 def _create_provider(mail_config: dict, provider: str = "", provider_ref: str = "") -> BaseMailProvider:
+    # 延迟导入，避免循环导入
+    from .paid_mail_providers import LuckMailProvider, Hotmail007Provider, MSAccountManagerProvider
+
     entry = next((dict(item) for item in _entries(mail_config) if provider_ref and item["provider_ref"] == provider_ref), None)
     entry = entry or next((dict(item) for item in _enabled_entries(mail_config) if provider and item["type"] == provider), None) or _next_entry(mail_config)
     conf = _config(mail_config)
-    if entry["type"] == "cloudmail_gen":
-        return CloudMailGenProvider(entry, conf)
     if entry["type"] == "cloudflare_temp_email":
         return CloudflareTempMailProvider(entry, conf)
-    if entry["type"] == "ddg_mail":
-        return DDGMailProvider(entry, conf)
     if entry["type"] == "tempmail_lol":
         return TempMailLolProvider(entry, conf)
-    if entry["type"] == "duckmail":
-        return DuckMailProvider(entry, conf)
-    if entry["type"] == "gptmail":
-        return GptMailProvider(entry, conf)
-    if entry["type"] == "moemail":
-        return MoEmailProvider(entry, conf)
-    if entry["type"] == "inbucket":
-        return InbucketMailProvider(entry, conf)
-    if entry["type"] == "yyds_mail":
-        return YydsMailProvider(entry, conf)
-    if entry["type"] == "outlook_token":
-        return OutlookTokenProvider(entry, conf)
+    if entry["type"] == "luckmail":
+        return LuckMailProvider(entry, conf)
+    if entry["type"] == "hotmail007":
+        return Hotmail007Provider(entry, conf)
+    if entry["type"] == "msaccount_manager":
+        return MSAccountManagerProvider(entry, conf)
     raise RuntimeError(f"不支持的 mail.provider: {entry['type']}")
 
 

@@ -246,27 +246,26 @@
 
                 <div class="register-provider-section">
                   <div class="register-provider-section-title">基础配置</div>
+
+                  <SurfaceBox
+                    v-if="providerType(provider) === 'luckmail' || providerType(provider) === 'hotmail007'"
+                    class="register-provider-message"
+                    tone="warning"
+                    density="compact"
+                  >
+                    ⚠️ 付费服务：每次注册会购买邮箱并消耗余额，不参与自动注册
+                  </SurfaceBox>
+
                   <div class="register-form-grid register-form-grid--two">
                     <label class="register-field">
                       <span class="register-label">类型</span>
                       <GroupedSelectMenu
-                        :model-value="provider.type || 'cloudmail_gen'"
+                        :model-value="provider.type || 'cloudflare_temp_email'"
                         :groups="providerTypeGroups"
                         selected-indicator="none"
                         :disabled="registerConfig.enabled"
                         block
                         @update:model-value="value => updateProviderType(index, String(value))"
-                      />
-                    </label>
-
-                    <label v-if="providerType(provider) === 'gptmail'" class="register-field">
-                      <span class="register-label">Key 来源</span>
-                      <GroupedSelectMenu
-                        v-model="provider.key_mode"
-                        :groups="gptMailKeyModeGroups"
-                        selected-indicator="none"
-                        :disabled="registerConfig.enabled"
-                        block
                       />
                     </label>
 
@@ -281,13 +280,8 @@
                       />
                     </label>
 
-                    <label v-if="providerType(provider) === 'cloudmail_gen'" class="register-field">
-                      <span class="register-label">管理员邮箱</span>
-                      <Input v-model.trim="provider.admin_email" block :disabled="registerConfig.enabled" />
-                    </label>
-
                     <label v-if="providerUsesAdminPassword(provider)" class="register-field">
-                      <span class="register-label">{{ providerType(provider) === 'ddg_mail' ? 'CF Admin Password' : 'Admin Password' }}</span>
+                      <span class="register-label">Admin Password</span>
                       <Input
                         v-model.trim="provider.admin_password"
                         block
@@ -296,7 +290,7 @@
                       />
                     </label>
 
-                    <label v-if="providerUsesApiKey(provider) && !providerUsesPublicGptMailKey(provider)" class="register-field">
+                    <label v-if="providerUsesApiKey(provider)" class="register-field">
                       <span class="register-label">API Key</span>
                       <Input
                         v-model.trim="provider.api_key"
@@ -306,173 +300,79 @@
                       />
                     </label>
 
-                    <label v-if="providerUsesDefaultDomain(provider)" class="register-field">
-                      <span class="register-label">默认域名</span>
+                    <label v-if="providerType(provider) === 'hotmail007'" class="register-field">
+                      <span class="register-label">邮箱类型</span>
                       <Input
-                        v-model.trim="provider.default_domain"
+                        v-model.trim="provider.mail_type"
                         block
-                        :placeholder="providerType(provider) === 'duckmail' ? 'duckmail.sbs' : providerType(provider) === 'gptmail' ? 'sk-ai.eu.cc' : ''"
                         :disabled="registerConfig.enabled"
+                        placeholder="outlook Trusted Graph"
                       />
                     </label>
 
-                    <label v-if="providerType(provider) === 'cloudmail_gen'" class="register-field">
-                      <span class="register-label">邮箱前缀</span>
-                      <Input
-                        v-model.trim="provider.email_prefix"
-                        block
-                        :disabled="registerConfig.enabled"
-                        placeholder="可选"
-                      />
-                    </label>
-
-                    <label v-if="providerType(provider) === 'moemail'" class="register-field">
-                      <span class="register-label">过期时间</span>
-                      <Input
-                        v-model.number="provider.expiry_time"
-                        type="number"
-                        min="0"
-                        block
-                        :disabled="registerConfig.enabled"
-                        placeholder="0 表示服务默认"
-                      />
-                    </label>
-
-                    <label v-if="providerType(provider) === 'ddg_mail'" class="register-field">
-                      <span class="register-label">DDG Token</span>
-                      <Input
-                        v-model.trim="provider.ddg_token"
-                        block
-                        root-class="font-mono"
-                        :disabled="registerConfig.enabled"
-                        placeholder="DuckDuckGo Email Protection Bearer Token"
-                      />
-                    </label>
-
-                    <label v-if="providerType(provider) === 'ddg_mail'" class="register-field">
-                      <span class="register-label">CF Inbox JWT</span>
-                      <Input
-                        v-model.trim="provider.cf_inbox_jwt"
-                        block
-                        root-class="font-mono"
-                        :disabled="registerConfig.enabled"
-                        placeholder="固定收件箱 JWT"
-                      />
-                    </label>
-
-                    <label v-if="providerType(provider) === 'ddg_mail'" class="register-field">
-                      <span class="register-label">CF API Key</span>
-                      <Input
-                        v-model.trim="provider.cf_api_key"
-                        block
-                        root-class="font-mono"
-                        :disabled="registerConfig.enabled"
-                        placeholder="可选"
-                      />
-                    </label>
-
-                    <label v-if="providerType(provider) === 'ddg_mail'" class="register-field">
-                      <span class="register-label">CF 鉴权方式</span>
+                    <label v-if="providerUsesMailMode(provider)" class="register-field">
+                      <span class="register-label">读取方式</span>
                       <GroupedSelectMenu
-                        v-model="provider.cf_auth_mode"
-                        :groups="cfAuthModeGroups"
+                        v-model="provider.mail_mode"
+                        :groups="mailModeGroups"
                         selected-indicator="none"
                         :disabled="registerConfig.enabled"
                         block
                       />
                     </label>
 
-                    <label v-if="providerType(provider) === 'ddg_mail'" class="register-field">
-                      <span class="register-label">创建路径</span>
+                    <label v-if="providerType(provider) === 'luckmail'" class="register-field">
+                      <span class="register-label">邮箱类型</span>
                       <Input
-                        v-model.trim="provider.cf_create_path"
+                        v-model.trim="provider.email_type"
+                        block
+                        :disabled="registerConfig.enabled"
+                        placeholder="可留空，如 ms_imap / ms_graph"
+                      />
+                    </label>
+
+                    <label v-if="providerType(provider) === 'luckmail'" class="register-field">
+                      <span class="register-label">邮箱域名</span>
+                      <Input
+                        v-model.trim="provider.mail_domain"
+                        block
+                        :disabled="registerConfig.enabled"
+                        placeholder="可留空"
+                      />
+                    </label>
+
+                    <label v-if="providerType(provider) === 'luckmail'" class="register-field">
+                      <span class="register-label">最大重试次数</span>
+                      <Input
+                        v-model.number="provider.max_retry"
+                        type="number"
+                        min="1"
+                        block
+                        :disabled="registerConfig.enabled"
+                        placeholder="3"
+                      />
+                    </label>
+
+                    <label v-if="providerUsesProxy(provider)" class="register-field">
+                      <span class="register-label">代理</span>
+                      <Input
+                        v-model.trim="provider.proxy"
                         block
                         root-class="font-mono"
                         :disabled="registerConfig.enabled"
-                        placeholder="/api/new_address"
+                        placeholder="可选，留空使用全局代理"
                       />
                     </label>
-
-                    <label v-if="providerType(provider) === 'ddg_mail'" class="register-field">
-                      <span class="register-label">邮件列表路径</span>
-                      <Input
-                        v-model.trim="provider.cf_messages_path"
-                        block
-                        root-class="font-mono"
-                        :disabled="registerConfig.enabled"
-                        placeholder="/api/mails"
-                      />
-                    </label>
-
-                    <label v-if="providerType(provider) === 'yyds_mail'" class="register-field">
-                      <span class="register-label">Subdomain</span>
-                      <Input
-                        :model-value="stringValue(provider.subdomain)"
-                        block
-                        :disabled="registerConfig.enabled"
-                        @update:model-value="value => updateProviderField(index, 'subdomain', String(value || ''))"
-                      />
-                    </label>
-
-                    <label v-if="providerType(provider) === 'inbucket'" class="register-checkbox-field">
-                      <Checkbox v-model="provider.random_subdomain" :disabled="registerConfig.enabled">
-                        随机子域名
-                      </Checkbox>
-                    </label>
-
-                    <label v-if="providerType(provider) === 'yyds_mail'" class="register-checkbox-field">
-                      <Checkbox v-model="provider.wildcard" :disabled="registerConfig.enabled">
-                        Wildcard
-                      </Checkbox>
-                    </label>
-
-                    <label v-if="providerType(provider) === 'gptmail'" class="register-checkbox-field register-checkbox-field--compact register-field--full">
-                      <Checkbox v-model="provider.local_compose" :disabled="registerConfig.enabled">
-                        已知域名本地拼接
-                      </Checkbox>
-                    </label>
-                  </div>
-                </div>
-
-                <div v-if="providerType(provider) === 'gptmail'" class="register-provider-section register-provider-section--soft">
-                  <div class="register-provider-section-title">GPTMail 额度</div>
-                  <div class="register-gptmail-panel">
-                    <div class="register-gptmail-summary">
-                      <MetaChip size="xs" :tone="gptMailStatusTone(index)">
-                        {{ gptMailStatusTitle(index, provider) }}
-                      </MetaChip>
-                      <MetaChip size="xs" tone="muted">Key {{ gptMailKeyModeLabel(provider) }}</MetaChip>
-                      <MetaChip v-if="gptMailStatusByIndex(index)?.key_hint" size="xs" tone="muted">
-                        {{ gptMailStatusByIndex(index)?.key_hint }}
-                      </MetaChip>
-                      <MetaChip v-if="gptMailRemainingText(index)" size="xs" tone="info">
-                        剩余 {{ gptMailRemainingText(index) }}
-                      </MetaChip>
-                      <MetaChip v-if="gptMailResetText(index)" size="xs" tone="muted">
-                        {{ gptMailResetText(index) }}
-                      </MetaChip>
-                    </div>
-                    <div class="register-provider-actions register-provider-actions--left">
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        :disabled="registerConfig.enabled || gptMailStatusBusy(index)"
-                        @click="checkGptMailStatus(index, provider)"
-                      >
-                        {{ gptMailStatusBusy(index) ? '检测中' : '检测额度' }}
-                      </Button>
-                    </div>
-                    <p class="register-preview-line">{{ gptMailStatusHint(index, provider) }}</p>
                   </div>
                 </div>
 
                 <div
-                  v-if="providerUsesDomainList(provider) || providerType(provider) === 'cloudmail_gen'"
+                  v-if="providerUsesDomainList(provider)"
                   class="register-provider-section"
                 >
                   <div class="register-provider-section-title">域名配置</div>
                   <div class="register-provider-stack">
-                    <label v-if="providerUsesDomainList(provider)" class="register-field">
+                    <label class="register-field">
                       <span class="register-label">{{ domainLabel(provider) }}</span>
                       <textarea
                         class="register-textarea"
@@ -482,151 +382,166 @@
                         @input="updateProviderArray(index, 'domain', $event)"
                       ></textarea>
                     </label>
-
-                    <label v-if="providerType(provider) === 'cloudmail_gen'" class="register-field">
-                      <span class="register-label">子域名前缀</span>
-                      <textarea
-                        class="register-textarea"
-                        :disabled="registerConfig.enabled"
-                        placeholder="每行一个子域名前缀，留空则直接使用主域名"
-                        :value="arrayText(provider.subdomain)"
-                        @input="updateProviderArray(index, 'subdomain', $event)"
-                      ></textarea>
-                    </label>
                   </div>
-                </div>
-
-                <div v-if="providerType(provider) === 'outlook_token'" class="register-provider-section register-provider-section--soft">
-                  <div class="register-provider-section-title">Outlook 邮箱池</div>
-
-                  <div class="register-form-grid register-form-grid--three">
-                    <label class="register-field">
-                      <span class="register-label">读取方式</span>
-                      <GroupedSelectMenu
-                        v-model="provider.mode"
-                        :groups="outlookModeGroups"
-                        selected-indicator="none"
-                        :disabled="registerConfig.enabled"
-                        block
-                      />
-                    </label>
-
-                    <label v-if="provider.mode !== 'graph'" class="register-field">
-                      <span class="register-label">IMAP Host</span>
-                      <Input
-                        v-model.trim="provider.imap_host"
-                        block
-                        root-class="font-mono"
-                        :disabled="registerConfig.enabled"
-                        placeholder="outlook.office365.com"
-                      />
-                    </label>
-
-                    <label class="register-field">
-                      <span class="register-label">读取邮件数</span>
-                      <Input
-                        v-model.number="provider.message_limit"
-                        type="number"
-                        min="1"
-                        block
-                        :disabled="registerConfig.enabled"
-                      />
-                    </label>
-                  </div>
-
-                  <div class="register-provider-section register-provider-section--soft">
-                    <div class="register-provider-section-title">加号别名</div>
-                    <div class="register-form-grid register-form-grid--three">
-                      <label class="register-checkbox-field register-checkbox-field--compact register-field--full">
-                        <Checkbox v-model="provider.alias_enabled" :disabled="registerConfig.enabled">
-                          启用 Outlook / Hotmail 加号别名
-                        </Checkbox>
-                      </label>
-
-                      <label class="register-field">
-                        <span class="register-label">每个邮箱别名数</span>
-                        <Input
-                          v-model.number="provider.alias_per_email"
-                          type="number"
-                          min="0"
-                          max="200"
-                          block
-                          :disabled="registerConfig.enabled || !provider.alias_enabled"
-                        />
-                      </label>
-
-                      <label class="register-field">
-                        <span class="register-label">别名前缀</span>
-                        <Input
-                          v-model.trim="provider.alias_prefix"
-                          block
-                          root-class="font-mono"
-                          placeholder="c2api"
-                          :disabled="registerConfig.enabled || !provider.alias_enabled"
-                        />
-                      </label>
-
-                      <label class="register-checkbox-field register-checkbox-field--compact">
-                        <Checkbox v-model="provider.alias_include_original" :disabled="registerConfig.enabled || !provider.alias_enabled">
-                          包含原邮箱
-                        </Checkbox>
-                      </label>
-                    </div>
-                    <p class="register-preview-line">{{ outlookAliasHint(provider) }}</p>
-                  </div>
-
-                  <label class="register-field">
-                    <span class="register-label">邮箱池导入</span>
-                    <textarea
-                      class="register-textarea register-textarea--tall"
-                      :disabled="registerConfig.enabled"
-                      :value="String(provider.mailboxes || '')"
-                      placeholder="每行一个：邮箱----密码----client_id----refresh_token"
-                      @input="updateProviderField(index, 'mailboxes', ($event.target as HTMLTextAreaElement).value)"
-                    ></textarea>
-                  </label>
-
-                  <div class="register-outlook-toolbar">
-                    <div class="register-outlook-summary">
-                      <MetaChip size="xs" tone="success">可用 {{ outlookPoolSummary(provider).available }}</MetaChip>
-                      <MetaChip size="xs" tone="muted">占用 {{ outlookPoolSummary(provider).inUse }}</MetaChip>
-                      <MetaChip size="xs" tone="muted">已用 {{ outlookPoolSummary(provider).used }}</MetaChip>
-                      <MetaChip size="xs" :tone="outlookPoolSummary(provider).retryable ? 'warning' : 'muted'">
-                        临时失败 {{ outlookPoolSummary(provider).retryable }}
-                      </MetaChip>
-                      <MetaChip size="xs" :tone="outlookPoolSummary(provider).invalid ? 'danger' : 'muted'">
-                        异常 {{ outlookPoolSummary(provider).invalid }}
-                      </MetaChip>
-                      <MetaChip v-if="outlookPoolSummary(provider).pending" size="xs" tone="info">
-                        待保存 {{ outlookPoolSummary(provider).pending }}
-                      </MetaChip>
-                    </div>
-
-                    <FloatingActionMenu
-                      label="更多维护"
-                      :items="outlookPoolActionItems"
-                      :disabled="registerConfig.enabled || legacySaving"
-                      align="right"
-                      placement="auto"
-                      :trigger-min-width="96"
-                      @select="handleOutlookPoolAction"
-                    />
-                  </div>
-
-                  <p class="register-preview-line">{{ outlookPoolHint(provider) }}</p>
-                  <details class="register-outlook-details">
-                    <summary>邮箱池详情</summary>
-                    <div class="register-outlook-detail-chips">
-                      <MetaChip size="xs" tone="muted">已保存 {{ outlookPoolSummary(provider).saved }}</MetaChip>
-                      <MetaChip size="xs" tone="info">待保存 {{ outlookPoolSummary(provider).pending }}</MetaChip>
-                      <MetaChip size="xs" tone="muted">占用 {{ outlookPoolSummary(provider).inUse }}</MetaChip>
-                      <MetaChip size="xs" tone="warning">需登录 {{ outlookPoolSummary(provider).loginRequired }}</MetaChip>
-                      <MetaChip size="xs" tone="warning">失效 {{ outlookPoolSummary(provider).tokenInvalid }}</MetaChip>
-                      <MetaChip size="xs" tone="warning">可重试失败 {{ outlookPoolSummary(provider).failed }}</MetaChip>
-                    </div>
-                  </details>
                 </div>
               </FormSection>
+            </div>
+          </FormSection>
+
+          <FormSection title="自动注册配置" subtitle="图片生图遇到无可用账号时自动触发注册流程" density="roomy">
+            <div class="settings-check-grid">
+              <div class="settings-check-item">
+                <Checkbox v-model="autoRegisterConfig.enabled">
+                  启用自动注册
+                </Checkbox>
+                <HelpTip text="总开关，关闭后不会触发任何自动注册" />
+              </div>
+            </div>
+
+            <label class="register-field">
+              <span class="register-label">触发条件</span>
+              <div class="settings-check-grid settings-check-grid--single mt-2">
+                <div class="settings-check-item">
+                  <Checkbox v-model="autoRegisterConfig.trigger_conditions.no_account">
+                    账号池为空
+                  </Checkbox>
+                </div>
+                <div class="settings-check-item">
+                  <Checkbox v-model="autoRegisterConfig.trigger_conditions.all_quota_exhausted">
+                    所有账号额度耗尽
+                  </Checkbox>
+                </div>
+                <div class="settings-check-item">
+                  <Checkbox v-model="autoRegisterConfig.trigger_conditions.all_accounts_invalid">
+                    所有账号状态异常
+                  </Checkbox>
+                </div>
+                <div class="settings-check-item">
+                  <Checkbox v-model="autoRegisterConfig.trigger_conditions.all_accounts_rate_limited">
+                    所有账号限流中
+                  </Checkbox>
+                </div>
+                <div class="settings-check-item">
+                  <Checkbox v-model="autoRegisterConfig.trigger_conditions.all_accounts_busy">
+                    所有账号并发满
+                  </Checkbox>
+                </div>
+              </div>
+            </label>
+
+            <div class="register-form-grid">
+              <label class="register-field">
+                <span class="register-label">每次注册数量</span>
+                <Input
+                  v-model.number="autoRegisterConfig.register_count"
+                  type="number"
+                  min="1"
+                  max="5"
+                  block
+                />
+              </label>
+
+              <label class="register-field">
+                <span class="register-label">冷却期（秒）</span>
+                <Input
+                  v-model.number="autoRegisterConfig.cooldown_seconds"
+                  type="number"
+                  min="60"
+                  block
+                />
+              </label>
+
+              <label class="register-field">
+                <span class="register-label">账号池上限</span>
+                <Input
+                  v-model.number="autoRegisterConfig.max_total_accounts"
+                  type="number"
+                  min="0"
+                  block
+                />
+                <HelpTip text="0 表示不限制" />
+              </label>
+
+              <label class="register-field">
+                <span class="register-label">可用账号数阈值</span>
+                <Input
+                  v-model.number="autoRegisterConfig.min_available_accounts"
+                  type="number"
+                  min="0"
+                  block
+                />
+                <HelpTip text="可用账号数低于此值时触发，0 表示不启用" />
+              </label>
+
+              <label class="register-field">
+                <span class="register-label">最大连续失败次数</span>
+                <Input
+                  v-model.number="autoRegisterConfig.max_failures"
+                  type="number"
+                  min="1"
+                  block
+                />
+              </label>
+            </div>
+
+            <SurfaceBox density="compact">
+              <div class="grid grid-cols-2 gap-2 text-xs">
+                <span class="text-muted-foreground">运行状态</span>
+                <span class="text-right" :class="autoRegisterStatus.running ? 'text-amber-600' : 'text-foreground'">
+                  {{ autoRegisterStatus.running ? '运行中' : '空闲' }}
+                </span>
+
+                <span class="text-muted-foreground">上次触发</span>
+                <span class="text-right text-foreground">
+                  {{ formatDateTime(autoRegisterStatus.last_triggered_at) }}
+                </span>
+
+                <span class="text-muted-foreground">触发原因</span>
+                <span class="text-right text-foreground">
+                  {{ formatTriggerReason(autoRegisterStatus.last_trigger_reason) }}
+                </span>
+
+                <span class="text-muted-foreground">连续失败</span>
+                <span class="text-right" :class="autoRegisterStatus.consecutive_failures > 0 ? 'text-rose-600' : 'text-foreground'">
+                  {{ autoRegisterStatus.consecutive_failures }}
+                </span>
+
+                <span class="text-muted-foreground">累计注册</span>
+                <span class="text-right text-emerald-600">
+                  {{ autoRegisterStatus.total_auto_registered }}
+                </span>
+              </div>
+            </SurfaceBox>
+
+            <details v-if="Object.keys(autoRegisterStatus.trigger_count_by_reason || {}).length" class="mt-3">
+              <summary class="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+                触发统计详情
+              </summary>
+              <div class="mt-2 grid grid-cols-2 gap-2 text-xs">
+                <template v-for="(count, reason) in autoRegisterStatus.trigger_count_by_reason" :key="reason">
+                  <span class="text-muted-foreground">{{ formatTriggerReason(reason) }}</span>
+                  <span class="text-right text-foreground">{{ count }} 次</span>
+                </template>
+              </div>
+            </details>
+
+            <div class="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                :disabled="testingAutoRegister"
+                @click="testAutoRegister"
+              >
+                {{ testingAutoRegister ? '测试中...' : '测试自动注册' }}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                :disabled="autoRegisterStatus.consecutive_failures === 0"
+                @click="resetAutoRegisterFailures"
+              >
+                重置失败计数
+              </Button>
             </div>
           </FormSection>
         </div>
@@ -684,7 +599,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Button, Checkbox, Input } from 'nanocat-ui'
+import { Button, Checkbox, Input, HelpTip } from 'nanocat-ui'
 import type { ActionMenuItem } from 'nanocat-ui'
 import { proxyApi } from '@/api/proxy'
 import { getAuthToken } from '@/api/client'
@@ -770,6 +685,44 @@ const defaultRegisterConfig: LegacyRegisterConfig = {
 
 const registerConfig = ref<LegacyRegisterConfig | null>(null)
 
+const autoRegisterStatus = ref({
+  enabled: false,
+  last_triggered_at: null as string | null,
+  last_completed_at: null as string | null,
+  last_trigger_reason: '',
+  running: false,
+  consecutive_failures: 0,
+  last_failure_reset_at: null as string | null,
+  total_auto_registered: 0,
+  trigger_count_by_reason: {
+    no_account: 0,
+    all_quota_exhausted: 0,
+    all_accounts_invalid: 0,
+    all_accounts_rate_limited: 0,
+    all_accounts_busy: 0,
+    min_available_threshold: 0,
+  },
+})
+
+const autoRegisterConfig = ref({
+  enabled: false,
+  trigger_conditions: {
+    no_account: true,
+    all_quota_exhausted: true,
+    all_accounts_invalid: true,
+    all_accounts_rate_limited: true,
+    all_accounts_busy: true,
+  },
+  register_count: 1,
+  cooldown_seconds: 300,
+  max_total_accounts: 100,
+  min_available_accounts: 0,
+  max_failures: 3,
+  reset_failures_after: 3600,
+})
+
+const testingAutoRegister = ref(false)
+
 const registerModeOptions = [
   { value: 'total', label: '按数量注册' },
   { value: 'quota', label: '达到额度停止' },
@@ -785,18 +738,19 @@ const registerProxyModeOptions = [
 const registerProxyModeGroups = [{ options: registerProxyModeOptions }]
 
 const providerTypeOptions = [
-  { value: 'cloudmail_gen', label: 'CloudMail Gen' },
   { value: 'cloudflare_temp_email', label: 'Cloudflare Temp Email' },
   { value: 'tempmail_lol', label: 'TempMail.lol' },
-  { value: 'moemail', label: 'MoEmail' },
-  { value: 'inbucket', label: 'Inbucket' },
-  { value: 'duckmail', label: 'DuckMail' },
-  { value: 'gptmail', label: 'GPTMail' },
-  { value: 'yyds_mail', label: 'YYDS Mail' },
-  { value: 'ddg_mail', label: 'DDG + CF 收件箱' },
-  { value: 'outlook_token', label: 'Microsoft 邮箱凭据池' },
+  { value: 'luckmail', label: 'LuckMail（付费）' },
+  { value: 'hotmail007', label: 'Hotmail007（付费）' },
+  { value: 'msaccount_manager', label: 'Microsoft Account Manager' },
 ]
 const providerTypeGroups = [{ options: providerTypeOptions }]
+
+const mailModeOptions = [
+  { value: 'graph', label: 'Graph API' },
+  { value: 'imap', label: 'IMAP' },
+]
+const mailModeGroups = [{ options: mailModeOptions }]
 
 const cfAuthModeOptions = [
   { value: 'none', label: '不附加' },
@@ -826,20 +780,13 @@ const outlookPoolActionItems: ActionMenuItem[] = [
 ]
 const providerCommonKeys = ['id', 'enable', 'type', 'label'] as const
 const providerTypeKeys: Record<string, string[]> = {
-  cloudmail_gen: ['api_base', 'admin_email', 'admin_password', 'domain', 'subdomain', 'email_prefix'],
   cloudflare_temp_email: ['api_base', 'admin_password', 'domain'],
   tempmail_lol: ['api_key', 'domain'],
-  moemail: ['api_base', 'api_key', 'domain', 'expiry_time'],
-  inbucket: ['api_base', 'domain', 'random_subdomain'],
-  duckmail: ['api_key', 'default_domain'],
-  gptmail: ['key_mode', 'api_key', 'default_domain', 'local_compose'],
-  yyds_mail: ['api_base', 'api_key', 'domain', 'subdomain', 'wildcard'],
-  ddg_mail: ['api_base', 'ddg_token', 'cf_inbox_jwt', 'admin_password', 'cf_api_key', 'cf_auth_mode', 'cf_create_path', 'cf_messages_path'],
-  outlook_token: ['mailboxes', 'mode', 'imap_host', 'message_limit', 'alias_enabled', 'alias_per_email', 'alias_prefix', 'alias_include_original'],
+  luckmail: ['api_base', 'api_key', 'email_type', 'mail_domain', 'max_retry'],
+  hotmail007: ['api_base', 'api_key', 'mail_type', 'mail_mode'],
+  msaccount_manager: ['api_base', 'api_key', 'mail_mode', 'proxy'],
 }
-const providerLocalOnlyKeys: Record<string, string[]> = {
-  outlook_token: ['mailboxes_count', 'mailboxes_base_count', 'mailboxes_alias_count', 'mailboxes_preview', 'mailboxes_stats', 'mailboxes_parse_stats'],
-}
+const providerLocalOnlyKeys: Record<string, string[]> = {}
 
 const registerProviders = computed(() => registerConfig.value?.mail.providers || [])
 const registerProxyGroupOptions = computed(() => {
@@ -937,56 +884,26 @@ function normalizeProvider(provider: RegisterProvider): RegisterProvider {
   return normalized
 }
 
-function defaultProvider(type = 'cloudmail_gen'): RegisterProvider {
+function defaultProvider(type = 'cloudflare_temp_email'): RegisterProvider {
   const base = { id: createProviderId(type), enable: true, type }
   switch (type) {
-    case 'cloudmail_gen':
-      return { ...base, api_base: '', admin_email: '', admin_password: '', domain: [], subdomain: [], email_prefix: '' }
     case 'cloudflare_temp_email':
       return { ...base, api_base: '', admin_password: '', domain: [] }
     case 'tempmail_lol':
       return { ...base, api_key: '', domain: [] }
-    case 'moemail':
-      return { ...base, api_base: '', api_key: '', domain: [], expiry_time: 0 }
-    case 'inbucket':
-      return { ...base, api_base: '', domain: [], random_subdomain: true }
-    case 'duckmail':
-      return { ...base, api_key: '', default_domain: 'duckmail.sbs' }
-    case 'gptmail':
-      return { ...base, key_mode: 'public', api_key: '', default_domain: '', local_compose: false }
-    case 'yyds_mail':
-      return { ...base, api_base: 'https://maliapi.215.im/v1', api_key: '', domain: [], subdomain: '', wildcard: false }
-    case 'ddg_mail':
-      return {
-        ...base,
-        api_base: '',
-        ddg_token: '',
-        cf_inbox_jwt: '',
-        admin_password: '',
-        cf_api_key: '',
-        cf_auth_mode: 'none',
-        cf_create_path: '/api/new_address',
-        cf_messages_path: '/api/mails',
-      }
-    case 'outlook_token':
-      return {
-        ...base,
-        mailboxes: '',
-        mode: 'auto',
-        imap_host: 'outlook.office365.com',
-        message_limit: 10,
-        alias_enabled: false,
-        alias_per_email: 5,
-        alias_prefix: 'c2api',
-        alias_include_original: true,
-      }
+    case 'luckmail':
+      return { ...base, api_base: '', api_key: '', email_type: '', mail_domain: '', max_retry: 3 }
+    case 'hotmail007':
+      return { ...base, api_base: '', api_key: '', mail_type: 'outlook Trusted Graph', mail_mode: 'graph' }
+    case 'msaccount_manager':
+      return { ...base, api_base: '', api_key: '', mail_mode: 'graph', proxy: '' }
     default:
       return base
   }
 }
 
 function providerType(provider: RegisterProvider) {
-  return String(provider.type || 'cloudmail_gen')
+  return String(provider.type || 'cloudflare_temp_email')
 }
 
 function createProviderId(type = 'provider') {
@@ -1030,10 +947,6 @@ function listFromDraft(value: unknown) {
 
 function providerDraftValue(type: string, key: string, value: unknown) {
   if (key === 'domain') return listFromDraft(value)
-  if (key === 'subdomain') {
-    if (type === 'cloudmail_gen') return listFromDraft(value)
-    if (type === 'yyds_mail') return Array.isArray(value) ? value.join('\n') : String(value || '')
-  }
   return value
 }
 
@@ -1143,62 +1056,58 @@ function updateProviderField(index: number, key: string, value: unknown) {
 }
 
 function providerUsesApiBase(provider: RegisterProvider) {
-  return ['cloudmail_gen', 'cloudflare_temp_email', 'moemail', 'inbucket', 'yyds_mail', 'ddg_mail'].includes(providerType(provider))
+  return ['cloudflare_temp_email', 'luckmail', 'hotmail007', 'msaccount_manager'].includes(providerType(provider))
 }
 
 function providerUsesApiKey(provider: RegisterProvider) {
-  return ['tempmail_lol', 'moemail', 'duckmail', 'gptmail', 'yyds_mail'].includes(providerType(provider))
+  return ['tempmail_lol', 'luckmail', 'hotmail007', 'msaccount_manager'].includes(providerType(provider))
 }
 
 function providerUsesPublicGptMailKey(provider: RegisterProvider) {
-  return providerType(provider) === 'gptmail' && String(provider.key_mode || 'public') !== 'custom'
+  return false
 }
 
 function providerUsesAdminPassword(provider: RegisterProvider) {
-  return ['cloudmail_gen', 'cloudflare_temp_email', 'ddg_mail'].includes(providerType(provider))
+  return ['cloudflare_temp_email'].includes(providerType(provider))
 }
 
 function providerUsesDefaultDomain(provider: RegisterProvider) {
-  return ['duckmail', 'gptmail'].includes(providerType(provider))
+  return false
 }
 
 function providerUsesDomainList(provider: RegisterProvider) {
-  return ['cloudmail_gen', 'tempmail_lol', 'cloudflare_temp_email', 'moemail', 'inbucket', 'yyds_mail'].includes(providerType(provider))
+  return ['tempmail_lol', 'cloudflare_temp_email'].includes(providerType(provider))
+}
+
+function providerUsesProxy(provider: RegisterProvider) {
+  return ['msaccount_manager'].includes(providerType(provider))
+}
+
+function providerUsesMailMode(provider: RegisterProvider) {
+  return ['hotmail007', 'msaccount_manager'].includes(providerType(provider))
 }
 
 function apiBaseLabel(provider: RegisterProvider) {
-  const type = providerType(provider)
-  if (type === 'cloudmail_gen') return 'CloudMail URL'
-  if (type === 'ddg_mail') return 'CF API Base'
   return 'API Base'
 }
 
 function apiBasePlaceholder(provider: RegisterProvider) {
-  const type = providerType(provider)
-  if (type === 'yyds_mail') return 'https://maliapi.215.im/v1'
   return ''
 }
 
 function domainLabel(provider: RegisterProvider) {
-  const type = providerType(provider)
-  if (type === 'inbucket') return '基础域名'
-  if (type === 'cloudmail_gen') return '邮箱域名'
   return '域名'
 }
 
 function domainPlaceholder(provider: RegisterProvider) {
   const type = providerType(provider)
-  if (type === 'inbucket') return '每行一个基础域名，可配合随机子域名'
-  if (type === 'cloudmail_gen') return '每行一个邮箱域名'
   if (type === 'cloudflare_temp_email') return '每行一个域名'
-  if (type === 'moemail') return '每行一个域名'
   if (type === 'tempmail_lol') return '每行一个域名，可留空使用服务默认'
-  if (type === 'yyds_mail') return '每行一个域名，可留空'
   return '每行一个域名'
 }
 
 function gptMailKeyModeLabel(provider: RegisterProvider) {
-  return providerUsesPublicGptMailKey(provider) ? '公共' : '自定义'
+  return ''
 }
 
 function outlookPoolStats(provider: RegisterProvider) {
@@ -1674,6 +1583,10 @@ async function saveLegacyConfig() {
   if (!registerConfig.value) return
   legacySaving.value = true
   try {
+    // 先保存自动注册配置
+    await registerApi.updateAutoRegisterConfig(autoRegisterConfig.value)
+
+    // 再保存注册配置
     const response = await registerApi.updateConfig(legacyPayload())
     applyRegisterConfig(response.register)
     toast.success('注册配置已保存')
@@ -1866,9 +1779,79 @@ function normalizeLogLevel(level?: string) {
   return 'info'
 }
 
+async function loadAutoRegisterStatus() {
+  try {
+    const response = await registerApi.getAutoRegisterStatus()
+    if (response.status) {
+      autoRegisterStatus.value = response.status
+      autoRegisterConfig.value = response.status.config
+    }
+  } catch (error) {
+    console.error('Failed to load auto-register status:', error)
+  }
+}
+
+async function testAutoRegister() {
+  testingAutoRegister.value = true
+  try {
+    const response = await registerApi.triggerAutoRegister(1)
+    if (response.triggered) {
+      toast.success(response.message)
+    } else {
+      toast.warning(response.message)
+    }
+    // 刷新状态
+    await loadAutoRegisterStatus()
+  } catch (error) {
+    toast.error('触发自动注册失败: ' + String(error))
+  } finally {
+    testingAutoRegister.value = false
+  }
+}
+
+async function resetAutoRegisterFailures() {
+  try {
+    const response = await registerApi.resetAutoRegisterFailures()
+    if (response.status) {
+      autoRegisterStatus.value = response.status
+      autoRegisterConfig.value = response.status.config
+    }
+    toast.success('失败计数已重置')
+  } catch (error) {
+    toast.error('重置失败计数失败: ' + String(error))
+  }
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return '未触发'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+}
+
+function formatTriggerReason(reason: string) {
+  const reasonMap: Record<string, string> = {
+    no_account: '账号池为空',
+    all_quota_exhausted: '所有账号额度耗尽',
+    all_accounts_invalid: '所有账号状态异常',
+    all_accounts_rate_limited: '所有账号限流中',
+    all_accounts_busy: '所有账号并发满',
+    min_available_threshold: '可用账号数低于阈值',
+    manual: '手动触发',
+  }
+  return reasonMap[reason] || reason || '无'
+}
+
 onMounted(async () => {
   startGptMailClock()
-  await Promise.all([loadRegisterConfig(), loadProxyGroups()])
+  await Promise.all([loadRegisterConfig(), loadProxyGroups(), loadAutoRegisterStatus()])
   startLiveUpdates()
 })
 

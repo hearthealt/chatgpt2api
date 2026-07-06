@@ -25,52 +25,14 @@ export type RegisterProvider = {
   label?: string
   api_base?: string
   api_key?: string
-  admin_email?: string
   admin_password?: string
-  ddg_token?: string
-  cf_inbox_jwt?: string
-  cf_api_base?: string
-  cf_api_key?: string
-  cf_auth_mode?: string
-  cf_create_path?: string
-  cf_messages_path?: string
-  default_domain?: string
-  key_mode?: 'public' | 'custom' | string
-  local_compose?: boolean
-  email_prefix?: string
-  subdomain?: string | string[]
   domain?: string[]
-  cf_domain?: string[]
-  random_subdomain?: boolean
-  wildcard?: boolean
-  expiry_time?: number
-  mailboxes?: string
-  mailboxes_count?: number
-  mailboxes_base_count?: number
-  mailboxes_alias_count?: number
-  mailboxes_preview?: string[]
-  alias_enabled?: boolean
-  alias_per_email?: number
-  alias_prefix?: string
-  alias_include_original?: boolean
-  mailboxes_stats?: {
-    unused?: number
-    in_use?: number
-    used?: number
-    login_required?: number
-    token_invalid?: number
-    failed?: number
-    available?: number
-    busy?: number
-    retryable?: number
-    invalid?: number
-    abnormal?: number
-    [key: string]: number | undefined
-  }
-  mailboxes_parse_stats?: OutlookMailboxParseStats
-  mode?: 'graph' | 'imap' | 'auto' | string
-  imap_host?: string
-  message_limit?: number
+  proxy?: string
+  mail_type?: string
+  mail_mode?: string
+  email_type?: string
+  mail_domain?: string
+  max_retry?: number
   [key: string]: unknown
 }
 
@@ -131,6 +93,41 @@ export type GptMailStatus = {
   default_domain?: string
 }
 
+export type AutoRegisterStatus = {
+  enabled: boolean
+  last_triggered_at: string | null
+  last_completed_at: string | null
+  last_trigger_reason: string
+  running: boolean
+  consecutive_failures: number
+  last_failure_reset_at: string | null
+  total_auto_registered: number
+  trigger_count_by_reason: {
+    no_account: number
+    all_quota_exhausted: number
+    all_accounts_invalid: number
+    all_accounts_rate_limited: number
+    all_accounts_busy: number
+    min_available_threshold: number
+  }
+  config: {
+    enabled: boolean
+    trigger_conditions: {
+      no_account: boolean
+      all_quota_exhausted: boolean
+      all_accounts_invalid: boolean
+      all_accounts_rate_limited: boolean
+      all_accounts_busy: boolean
+    }
+    register_count: number
+    cooldown_seconds: number
+    max_total_accounts: number
+    min_available_accounts: number
+    max_failures: number
+    reset_failures_after: number
+  }
+}
+
 export const registerApi = {
   getConfig() {
     return apiClient.get<any, { register: LegacyRegisterConfig }>('/api/register')
@@ -155,5 +152,17 @@ export const registerApi = {
   },
   refreshGptMailKey(provider: RegisterProvider, force = true) {
     return apiClient.post<any, { status: GptMailStatus }>('/api/register/gptmail/refresh-key', { provider, force })
+  },
+  getAutoRegisterStatus() {
+    return apiClient.get<any, { status: AutoRegisterStatus }>('/api/register/auto-register/status')
+  },
+  updateAutoRegisterConfig(payload: Partial<AutoRegisterStatus['config']>) {
+    return apiClient.post<any, { status: AutoRegisterStatus }>('/api/register/auto-register/config', payload)
+  },
+  triggerAutoRegister(count?: number) {
+    return apiClient.post<any, { triggered: boolean; message: string }>('/api/register/auto-register/trigger', { count })
+  },
+  resetAutoRegisterFailures() {
+    return apiClient.post<any, { status: AutoRegisterStatus }>('/api/register/auto-register/reset-failures')
   },
 }

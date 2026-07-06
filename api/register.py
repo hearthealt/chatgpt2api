@@ -31,6 +31,21 @@ class GptMailStatusRequest(BaseModel):
     force: bool | None = None
 
 
+class AutoRegisterConfigRequest(BaseModel):
+    enabled: bool | None = None
+    trigger_conditions: dict | None = None
+    register_count: int | None = None
+    cooldown_seconds: int | None = None
+    max_total_accounts: int | None = None
+    min_available_accounts: int | None = None
+    max_failures: int | None = None
+    reset_failures_after: int | None = None
+
+
+class AutoRegisterTriggerRequest(BaseModel):
+    count: int | None = None
+
+
 def create_router() -> APIRouter:
     router = APIRouter()
 
@@ -94,5 +109,25 @@ def create_router() -> APIRouter:
                 await asyncio.sleep(0.5)
 
         return StreamingResponse(stream(), media_type="text/event-stream")
+
+    @router.get("/api/register/auto-register/status")
+    async def get_auto_register_status(authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        return {"status": register_service.get_auto_register_status()}
+
+    @router.post("/api/register/auto-register/config")
+    async def update_auto_register_config(body: AutoRegisterConfigRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        return {"status": register_service.update_auto_register_config(body.model_dump(exclude_none=True))}
+
+    @router.post("/api/register/auto-register/trigger")
+    async def trigger_auto_register(body: AutoRegisterTriggerRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        return register_service.trigger_auto_register_manual(body.count)
+
+    @router.post("/api/register/auto-register/reset-failures")
+    async def reset_auto_register_failures(authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        return {"status": register_service.reset_auto_register_failures()}
 
     return router

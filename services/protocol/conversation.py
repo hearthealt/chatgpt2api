@@ -1855,6 +1855,12 @@ def _generate_single_image(
                     plan_types=("plus", "team", "pro") if codex_model and not plan_type else None,
                 )
         except ImageAccountSelectionError as exc:
+            # 尝试触发自动注册
+            from services.register_service import register_service
+            triggered, trigger_message = register_service.trigger_auto_register_if_needed()
+            if triggered:
+                logger.info(f"图片调度失败触发自动注册: {trigger_message}")
+
             _monitor_image_stage(
                 request,
                 "image_local_rejected",
