@@ -375,7 +375,7 @@
                       <label v-if="providerType(provider) === 'hotmail007'" class="register-field">
                         <span class="register-label-row">
                           <span class="register-label">productId</span>
-                          <HelpTip text="用于 Hotmail007 open/stock 和 open/buy 的 productId" />
+                          <HelpTip text="Hotmail007 商品 ID" />
                         </span>
                         <Input
                           v-model.number="provider.product_id"
@@ -385,7 +385,7 @@
                           :disabled="registerConfig.enabled"
                           placeholder="从库存接口获取"
                         />
-                        <span class="register-field-hint">启动前先查库存，有库存才购买；每次固定购买 1 个。</span>
+                        <span class="register-field-hint">库存不足不购买，固定购买 1 个。</span>
                       </label>
 
                       <label v-if="providerUsesMailMode(provider)" class="register-field">
@@ -1066,7 +1066,7 @@ function providerCredentialHint(provider: RegisterProvider) {
 
 function providerOptionHint(provider: RegisterProvider) {
   const type = providerType(provider)
-  if (type === 'hotmail007') return '先查库存，有库存再购买'
+  if (type === 'hotmail007') return '固定购买 1 个'
   if (type === 'luckmail') return '购买凭据和可选筛选'
   if (type === 'msaccount_manager') return '读取邮箱的方式和代理'
   return ''
@@ -1119,7 +1119,20 @@ function providerDraftValue(type: string, key: string, value: unknown) {
 }
 
 function providerWithTypeDraft(current: RegisterProvider, type: string): RegisterProvider {
+  const currentType = providerType(current)
   const defaults = defaultProvider(type)
+
+  if (currentType !== type) {
+    const next: RegisterProvider = {
+      ...defaults,
+      id: String(current.id || current.provider_id || defaults.id || '').trim(),
+      type,
+      enable: current.enable !== false,
+    }
+    if (isFilled(current.label)) next.label = String(current.label).trim()
+    return next
+  }
+
   const next: RegisterProvider = {
     ...current,
     ...defaults,
