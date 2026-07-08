@@ -1250,7 +1250,7 @@ function markMissingImageTasks(taskIds: string[]) {
   conversations.value.forEach((conversation) => {
     conversation.messages.forEach((message) => {
       if (!message.taskId || !missing.has(message.taskId)) return
-      if (message.status === 'done' || message.status === 'error') return
+      if (message.status === 'error' && message.error === '此图片已删除') return
       message.status = 'error'
       message.error = '此图片已删除'
       touchConversation(conversation)
@@ -1474,7 +1474,7 @@ function initializeStudio() {
 
 function activateStudio() {
   isStudioActive = true
-  void refreshImageTasks()
+  void refreshImageTasks(true)  // force=true to detect deletions on Gallery
   scheduleImagePoll()
   scheduleScrollToBottom()
 }

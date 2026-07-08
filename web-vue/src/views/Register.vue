@@ -696,12 +696,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Button, Checkbox, Input, HelpTip } from 'nanocat-ui'
-import type { ActionMenuItem } from 'nanocat-ui'
 import { proxyApi } from '@/api/proxy'
 import { getAuthToken } from '@/api/client'
 import { parseProxyReference, serializeProxyReference, type ProxyGroup } from '@/api/proxy'
-import { registerApi, type GptMailStatus, type LegacyRegisterConfig, type OutlookMailboxParseStats, type RegisterProvider } from '@/api/register'
-import FloatingActionMenu from '@/components/ai/FloatingActionMenu.vue'
+import { registerApi, type LegacyRegisterConfig, type RegisterProvider } from '@/api/register'
 import FormSection from '@/components/ai/FormSection.vue'
 import MetaChip from '@/components/ai/MetaChip.vue'
 import MetricStrip from '@/components/ai/MetricStrip.vue'
@@ -711,25 +709,13 @@ import PanelHeader from '@/components/ai/PanelHeader.vue'
 import RuntimeLogPanel from '@/components/ai/RuntimeLogPanel.vue'
 import type { RuntimeLogPanelLine } from '@/components/ai/RuntimeLogPanel.vue'
 import StateBadge from '@/components/ai/StateBadge.vue'
-import StateBlock from '@/components/ai/StateBlock.vue'
 import SurfaceBox from '@/components/ai/SurfaceBox.vue'
 import GroupedSelectMenu from '@/components/ui/GroupedSelectMenu.vue'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useToast } from '@/composables/useToast'
 
 type RegisterMode = 'total' | 'quota' | 'available'
-type OutlookResetScope = 'all' | 'retryable' | 'invalid' | 'unused'
 type RegisterProxyMode = 'global' | 'direct' | 'group' | 'custom'
-type GptMailStatusState = {
-  loading: boolean
-  error: string
-  data: GptMailStatus | null
-}
-type GptMailCheckOptions = {
-  silent?: boolean
-  force?: boolean
-  reschedule?: boolean
-}
 
 const toast = useToast()
 const confirmDialog = useConfirmDialog()
@@ -742,11 +728,6 @@ const proxyGroups = ref<ProxyGroup[]>([])
 const registerProxyMode = ref<RegisterProxyMode>('global')
 const selectedRegisterProxyGroupId = ref('')
 const customRegisterProxyInput = ref('')
-const gptMailStatusStates = ref<Record<number, GptMailStatusState>>({})
-const gptMailClockNow = ref(Date.now())
-const gptMailRefreshTimers = new Map<number, number[]>()
-const gptMailClockTimer = ref<number | null>(null)
-const gptMailResetFallbackSeconds = 5 * 60
 
 const defaultRegisterConfig: LegacyRegisterConfig = {
   mail: {
@@ -848,32 +829,6 @@ const mailModeOptions = [
 ]
 const mailModeGroups = [{ options: mailModeOptions }]
 
-const cfAuthModeOptions = [
-  { value: 'none', label: '不附加' },
-  { value: 'bearer', label: 'Bearer' },
-  { value: 'x-api-key', label: 'X-API-Key' },
-  { value: 'query-key', label: 'Query key' },
-]
-const cfAuthModeGroups = [{ options: cfAuthModeOptions }]
-const gptMailKeyModeOptions = [
-  { value: 'public', label: '公共测试 Key' },
-  { value: 'custom', label: '自定义 Key' },
-]
-const gptMailKeyModeGroups = [{ options: gptMailKeyModeOptions }]
-
-const outlookModeOptions = [
-  { value: 'graph', label: 'Graph API' },
-  { value: 'imap', label: 'IMAP' },
-  { value: 'auto', label: '自动兜底' },
-]
-const outlookModeGroups = [{ options: outlookModeOptions }]
-const outlookPoolActionItems: ActionMenuItem[] = [
-  { key: 'retry_failed', label: '重试临时失败' },
-  { key: 'retryable', label: '释放占用/失败' },
-  { key: 'invalid', label: '清除异常标记', dividerBefore: true },
-  { key: 'unused', label: '删除未使用材料', danger: true, dividerBefore: true },
-  { key: 'all', label: '重置邮箱池状态', danger: true },
-]
 const providerCommonKeys = ['id', 'enable', 'type', 'label'] as const
 const providerTypeKeys: Record<string, string[]> = {
   cloudflare_temp_email: ['api_base', 'admin_password', 'domain'],
@@ -981,9 +936,6 @@ function normalizeProvider(provider: RegisterProvider): RegisterProvider {
     type,
     enable: provider.enable !== false,
   }
-  if (type === 'gptmail' && !provider.key_mode && isFilled(provider.api_key)) {
-    normalized.key_mode = 'custom'
-  }
   return normalized
 }
 
@@ -1020,7 +972,7 @@ function providerKey(provider: RegisterProvider, index: number) {
   return String(provider.id || provider.provider_id || '').trim() || `${providerType(provider)}-${index}`
 }
 
-function providerTitle(provider: RegisterProvider, index: number) {
+function providerTitle(_provider: RegisterProvider, index: number) {
   return `邮箱来源 ${index + 1}`
 }
 
@@ -1178,28 +1130,10 @@ function providerRequirementMessages(provider: RegisterProvider) {
   }
 
   switch (type) {
-    case 'cloudmail_gen':
-      requireValue(provider.api_base, 'CloudMail URL')
-      requireValue(provider.admin_email, '管理员邮箱')
-      requireValue(provider.admin_password, 'Admin Password')
-      requireList(provider.domain, '邮箱域名')
-      break
     case 'cloudflare_temp_email':
       requireValue(provider.api_base, 'API Base')
       requireValue(provider.admin_password, 'Admin Password')
       requireList(provider.domain, '域名')
-      break
-    case 'moemail':
-      requireValue(provider.api_base, 'API Base')
-      requireValue(provider.api_key, 'API Key')
-      requireList(provider.domain, '域名')
-      break
-    case 'inbucket':
-      requireValue(provider.api_base, 'API Base')
-      requireList(provider.domain, '基础域名')
-      break
-    case 'duckmail':
-      requireValue(provider.api_key, 'API Key')
       break
     case 'luckmail':
       requireValue(provider.api_key, 'API Key')
@@ -1212,23 +1146,6 @@ function providerRequirementMessages(provider: RegisterProvider) {
       requireValue(provider.api_base, 'API Base')
       requireValue(provider.api_key, 'API Key')
       break
-    case 'gptmail':
-      if (!providerUsesPublicGptMailKey(provider)) requireValue(provider.api_key, 'API Key')
-      if (provider.local_compose) requireValue(provider.default_domain, '默认域名')
-      break
-    case 'yyds_mail':
-      requireValue(provider.api_key, 'API Key')
-      break
-    case 'ddg_mail':
-      requireValue(provider.api_base, 'CF API Base')
-      requireValue(provider.ddg_token, 'DDG Token')
-      requireValue(provider.cf_inbox_jwt, 'CF Inbox JWT')
-      break
-    case 'outlook_token': {
-      const savedCount = Number(provider.mailboxes_count || 0)
-      if (savedCount <= 0 && pendingOutlookCount(provider) <= 0) missing.push('Microsoft 邮箱凭据池')
-      break
-    }
     default:
       break
   }
@@ -1238,17 +1155,10 @@ function providerRequirementMessages(provider: RegisterProvider) {
 
 function updateProviderType(index: number, type: string) {
   if (!registerConfig.value) return
-  clearGptMailState(index)
   const providers = [...registerProviders.value]
   const current = providers[index] || {}
   providers[index] = providerWithTypeDraft(current, type)
   registerConfig.value.mail.providers = providers
-}
-
-function updateProviderField(index: number, key: string, value: unknown) {
-  const provider = registerProviders.value[index]
-  if (!provider) return
-  provider[key] = value
 }
 
 function providerUsesApiBase(provider: RegisterProvider) {
@@ -1272,16 +1182,8 @@ function providerIsPaid(provider: RegisterProvider) {
   return ['luckmail', 'hotmail007'].includes(providerType(provider))
 }
 
-function providerUsesPublicGptMailKey(provider: RegisterProvider) {
-  return false
-}
-
 function providerUsesAdminPassword(provider: RegisterProvider) {
   return ['cloudflare_temp_email'].includes(providerType(provider))
-}
-
-function providerUsesDefaultDomain(provider: RegisterProvider) {
-  return false
 }
 
 function providerUsesDomainList(provider: RegisterProvider) {
@@ -1296,15 +1198,15 @@ function providerUsesMailMode(provider: RegisterProvider) {
   return ['msaccount_manager'].includes(providerType(provider))
 }
 
-function apiBaseLabel(provider: RegisterProvider) {
+function apiBaseLabel(_provider: RegisterProvider) {
   return 'API Base'
 }
 
-function apiBasePlaceholder(provider: RegisterProvider) {
+function apiBasePlaceholder(_provider: RegisterProvider) {
   return ''
 }
 
-function domainLabel(provider: RegisterProvider) {
+function domainLabel(_provider: RegisterProvider) {
   return '域名'
 }
 
@@ -1313,322 +1215,6 @@ function domainPlaceholder(provider: RegisterProvider) {
   if (type === 'cloudflare_temp_email') return '每行一个域名'
   if (type === 'tempmail_lol') return '每行一个域名，可留空使用服务默认'
   return '每行一个域名'
-}
-
-function gptMailKeyModeLabel(provider: RegisterProvider) {
-  return ''
-}
-
-function outlookPoolStats(provider: RegisterProvider) {
-  return provider.mailboxes_stats || {}
-}
-
-function numeric(value: unknown) {
-  return Number(value || 0) || 0
-}
-
-function pendingOutlookCount(provider: RegisterProvider) {
-  return String(provider.mailboxes || '')
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(line => line && line.split('----').length >= 4)
-    .length
-}
-
-function outlookPoolSummary(provider: RegisterProvider) {
-  const stats = outlookPoolStats(provider)
-  const inUse = numeric(stats.in_use)
-  const loginRequired = numeric(stats.login_required)
-  const tokenInvalid = numeric(stats.token_invalid)
-  const failed = numeric(stats.failed)
-  const retryable = numeric(stats.retryable) || failed
-  const invalid = numeric(stats.invalid) || loginRequired + tokenInvalid
-
-  return {
-    saved: numeric(provider.mailboxes_count),
-    pending: pendingOutlookCount(provider),
-    available: numeric(stats.available) || numeric(stats.unused),
-    used: numeric(stats.used),
-    inUse,
-    loginRequired,
-    tokenInvalid,
-    failed,
-    retryable,
-    invalid,
-    abnormal: retryable + invalid,
-  }
-}
-
-function outlookAliasSummary(provider: RegisterProvider) {
-  const base = numeric(provider.mailboxes_base_count || provider.mailboxes_count)
-  const alias = numeric(provider.mailboxes_alias_count)
-  const perEmail = numeric(provider.alias_per_email)
-  const includeOriginal = provider.alias_include_original !== false
-  const multiplier = provider.alias_enabled ? perEmail + (includeOriginal ? 1 : 0) : 1
-  const pending = pendingOutlookCount(provider)
-  return {
-    enabled: Boolean(provider.alias_enabled),
-    base,
-    alias,
-    perEmail,
-    includeOriginal,
-    multiplier,
-    pending,
-    pendingExpanded: provider.alias_enabled ? pending * multiplier : pending,
-  }
-}
-
-function outlookAliasHint(provider: RegisterProvider) {
-  const summary = outlookAliasSummary(provider)
-  if (!summary.enabled) return '未启用加号别名，注册时直接使用导入邮箱。'
-  if (summary.pending > 0) {
-    return `保存后本次导入约展开为 ${summary.pendingExpanded} 个注册地址；登录和收信仍使用原邮箱凭据。`
-  }
-  if (summary.base > 0) {
-    return `已保存 ${summary.base} 个原邮箱，当前规则生成 ${summary.alias} 个别名地址；登录和收信仍使用原邮箱凭据。`
-  }
-  return '保存后会为 Outlook / Hotmail 地址生成加号别名；登录和收信仍使用原邮箱凭据。'
-}
-
-function outlookPoolHint(provider: RegisterProvider) {
-  const summary = outlookPoolSummary(provider)
-  if (summary.pending > 0) return `有 ${summary.pending} 个待保存，保存配置后进入 Microsoft 邮箱池。`
-  if (summary.saved <= 0) return '还没有保存 Microsoft 邮箱材料。'
-  if (summary.invalid > 0) return `有 ${summary.invalid} 个异常邮箱，需要重新获取 refresh_token 或重新导入材料。`
-  if (summary.retryable > 0 || summary.inUse > 0) return `有 ${summary.retryable} 个临时失败、${summary.inUse} 个占用，可在更多维护里释放后重试。`
-  if (summary.available <= 0) return '库存已用完，请导入新的 Microsoft 邮箱材料。'
-  return `已保存 ${summary.saved} 个 Microsoft 邮箱材料。`
-}
-
-function gptMailState(index: number): GptMailStatusState {
-  return gptMailStatusStates.value[index] || { loading: false, error: '', data: null }
-}
-
-function setGptMailState(index: number, state: GptMailStatusState) {
-  gptMailStatusStates.value = { ...gptMailStatusStates.value, [index]: state }
-}
-
-function clearGptMailRefreshTimer(index: number) {
-  const timers = gptMailRefreshTimers.get(index) || []
-  timers.forEach(timer => window.clearTimeout(timer))
-  if (timers.length) {
-    gptMailRefreshTimers.delete(index)
-  }
-}
-
-function clearAllGptMailRefreshTimers() {
-  gptMailRefreshTimers.forEach(timers => timers.forEach(timer => window.clearTimeout(timer)))
-  gptMailRefreshTimers.clear()
-}
-
-function clearGptMailState(index: number) {
-  clearGptMailRefreshTimer(index)
-  const next = { ...gptMailStatusStates.value }
-  delete next[index]
-  gptMailStatusStates.value = next
-}
-
-function pruneGptMailStates() {
-  const next: Record<number, GptMailStatusState> = {}
-  Object.entries(gptMailStatusStates.value).forEach(([key, state]) => {
-    const index = Number(key)
-    const provider = registerProviders.value[index]
-    if (provider && providerType(provider) === 'gptmail') {
-      next[index] = state
-    } else {
-      clearGptMailRefreshTimer(index)
-    }
-  })
-  Array.from(gptMailRefreshTimers.keys()).forEach((index) => {
-    const provider = registerProviders.value[index]
-    if (!provider || providerType(provider) !== 'gptmail') clearGptMailRefreshTimer(index)
-  })
-  gptMailStatusStates.value = next
-}
-
-function gptMailSecondsUntilReset(status: GptMailStatus, now = gptMailClockNow.value) {
-  const resetAt = Date.parse(String(status.reset_at || ''))
-  if (Number.isFinite(resetAt)) {
-    return Math.ceil((resetAt - now) / 1000)
-  }
-  const seconds = Number(status.seconds_until_reset)
-  if (!Number.isFinite(seconds) || seconds <= 0) return null
-  const checkedAt = Date.parse(String(status.checked_at || ''))
-  if (Number.isFinite(checkedAt)) {
-    return Math.ceil((checkedAt + seconds * 1000 - now) / 1000)
-  }
-  return Math.ceil(seconds)
-}
-
-function gptMailTimerDelay(seconds: number) {
-  return Math.min(Math.max(seconds * 1000, 1000), 2_147_483_000)
-}
-
-function gptMailResetDelays(status: GptMailStatus) {
-  const seconds = gptMailSecondsUntilReset(status, Date.now())
-  if (seconds === null) return []
-  const resetSeconds = Math.max(0, seconds)
-  return [
-    { delay: gptMailTimerDelay(resetSeconds), reschedule: false },
-    { delay: gptMailTimerDelay(resetSeconds + gptMailResetFallbackSeconds), reschedule: true },
-  ]
-}
-
-function scheduleGptMailRefresh(index: number, status: GptMailStatus) {
-  clearGptMailRefreshTimer(index)
-  if (String(status.key_mode || 'public') !== 'public') return
-  const timers = gptMailResetDelays(status).map(({ delay, reschedule }) => {
-    let timer = 0
-    timer = window.setTimeout(() => {
-      const activeTimers = gptMailRefreshTimers.get(index) || []
-      const nextTimers = activeTimers.filter(item => item !== timer)
-      if (nextTimers.length) {
-        gptMailRefreshTimers.set(index, nextTimers)
-      } else {
-        gptMailRefreshTimers.delete(index)
-      }
-      const provider = registerProviders.value[index]
-      if (!provider || providerType(provider) !== 'gptmail') return
-      void refreshGptMailPublicKey(index, provider, { reschedule })
-    }, delay)
-    return timer
-  })
-  if (timers.length) gptMailRefreshTimers.set(index, timers)
-}
-
-function gptMailStatusByIndex(index: number) {
-  return gptMailState(index).data
-}
-
-function gptMailStatusBusy(index: number) {
-  return gptMailState(index).loading
-}
-
-function gptMailStatusTone(index: number) {
-  const state = gptMailState(index)
-  if (state.loading) return 'info'
-  if (state.error) return 'danger'
-  if (!state.data) return 'muted'
-  if (state.data.is_active === false) return 'warning'
-  return 'success'
-}
-
-function gptMailStatusTitle(index: number, provider: RegisterProvider) {
-  const state = gptMailState(index)
-  if (state.loading) return '检测中'
-  if (state.error) return '检测失败'
-  if (!state.data) return providerUsesPublicGptMailKey(provider) ? '公共 Key' : '未检测'
-  return state.data.is_active === false ? '不可用' : '可用'
-}
-
-function formatGptMailNumber(value: unknown) {
-  const number = Number(value)
-  if (!Number.isFinite(number)) return ''
-  if (number < 0) return '不限'
-  return new Intl.NumberFormat().format(number)
-}
-
-function formatGptMailDuration(seconds: unknown) {
-  const total = Number(seconds)
-  if (!Number.isFinite(total) || total <= 0) return ''
-  if (total < 60) return `${Math.ceil(total)}s 后重置`
-  const hours = Math.floor(total / 3600)
-  const minutes = Math.floor((total % 3600) / 60)
-  if (hours > 0) return `${hours}h ${minutes}m 后重置`
-  return `${Math.max(1, minutes)}m 后重置`
-}
-
-function gptMailRemainingText(index: number) {
-  const status = gptMailStatusByIndex(index)
-  if (!status) return ''
-  if (String(status.key_mode || '') === 'custom') {
-    const remaining = formatGptMailNumber(status.remaining_total)
-    const total = formatGptMailNumber(status.total_limit)
-    if (remaining && total) return `${remaining} / ${total}`
-    if (remaining) return remaining
-  }
-  return formatGptMailNumber(status.remaining_today ?? status.remaining_total)
-}
-
-function gptMailResetText(index: number) {
-  const status = gptMailStatusByIndex(index)
-  if (!status) return ''
-  if (String(status.key_mode || '') === 'custom' && !status.reset_at && !status.seconds_until_reset) return ''
-  const seconds = gptMailSecondsUntilReset(status)
-  const countdown = formatGptMailDuration(seconds)
-  if (countdown) return countdown
-  if (seconds !== null && seconds <= 0) return '等待刷新'
-  if (status.reset_at) return `${formatClock(status.reset_at)} 重置`
-  return ''
-}
-
-function gptMailStatusHint(index: number, provider: RegisterProvider) {
-  const state = gptMailState(index)
-  if (state.error) return state.error
-  if (provider.local_compose && !String(provider.default_domain || '').trim()) {
-    return '本地拼接模式需要填写默认域名。'
-  }
-  if (provider.local_compose) {
-    return '本地拼接会少调用一次生成邮箱接口；请确认默认域名当前可用。'
-  }
-  if (!state.data) {
-    return providerUsesPublicGptMailKey(provider)
-      ? '使用 GPTMail 公共测试 Key，启动注册时后端会自动获取并缓存。'
-      : '填写自定义 Key 后可检测总额度和剩余额度。'
-  }
-  if (String(state.data.key_mode || provider.key_mode || '') === 'custom') {
-    const totalUsed = formatGptMailNumber(state.data.total_usage)
-    const totalLimit = formatGptMailNumber(state.data.total_limit)
-    const totalRemaining = formatGptMailNumber(state.data.remaining_total)
-    const checkedText = state.data.checked_at ? `检测于 ${formatClock(state.data.checked_at)}` : '状态已更新'
-    const resetText = state.data.reset_at ? `重置时间 ${formatClock(state.data.reset_at)}` : '自定义 Key 未返回独立重置时间'
-    if (totalUsed && totalLimit) {
-      return `总计已用 ${totalUsed} / ${totalLimit}${totalRemaining ? `，剩余 ${totalRemaining}` : ''}，${checkedText}；${resetText}。`
-    }
-    if (totalRemaining) return `总剩余 ${totalRemaining}，${checkedText}；${resetText}。`
-    return `${checkedText}；${resetText}。`
-  }
-  const used = formatGptMailNumber(state.data.used_today)
-  const limit = formatGptMailNumber(state.data.daily_limit)
-  if (used && limit) return `今日已用 ${used} / ${limit}，${state.data.checked_at ? `检测于 ${formatClock(state.data.checked_at)}` : '状态已更新'}。`
-  return state.data.checked_at ? `状态已更新，检测于 ${formatClock(state.data.checked_at)}。` : '状态已更新。'
-}
-
-async function checkGptMailStatus(index: number, provider: RegisterProvider, options: GptMailCheckOptions = {}) {
-  const previous = gptMailState(index).data
-  setGptMailState(index, { ...gptMailState(index), loading: true, error: '' })
-  try {
-    const response = await registerApi.getGptMailStatus(sanitizeProvider(provider), options.force ?? true)
-    setGptMailState(index, { loading: false, error: '', data: response.status })
-    if (options.reschedule !== false) scheduleGptMailRefresh(index, response.status)
-    if (!options.silent) toast.success('GPTMail 额度已更新')
-  } catch (error: any) {
-    const message = error?.message || '检测 GPTMail 额度失败'
-    setGptMailState(index, { loading: false, error: message, data: previous })
-    if (!options.silent) toast.error(message)
-  }
-}
-
-async function refreshGptMailPublicKey(index: number, provider: RegisterProvider, options: GptMailCheckOptions = {}) {
-  const previous = gptMailState(index).data
-  try {
-    const response = await registerApi.refreshGptMailKey(sanitizeProvider(provider), options.force ?? true)
-    setGptMailState(index, { loading: false, error: '', data: response.status })
-    if (options.reschedule !== false) scheduleGptMailRefresh(index, response.status)
-  } catch (error: any) {
-    const message = error?.message || '刷新 GPTMail 公共 Key 失败'
-    setGptMailState(index, { loading: false, error: message, data: previous })
-  }
-}
-
-function handleOutlookPoolAction(key: string) {
-  if (key === 'retry_failed') {
-    void retryFailedOutlookPool()
-    return
-  }
-  if (key === 'retryable' || key === 'invalid' || key === 'unused' || key === 'all') {
-    void resetOutlookPool(key)
-  }
 }
 
 function addProvider() {
@@ -1644,8 +1230,6 @@ async function deleteProvider(index: number) {
     confirmText: '删除',
   })
   if (!ok) return
-  clearAllGptMailRefreshTimers()
-  gptMailStatusStates.value = {}
   registerConfig.value.mail.providers = registerProviders.value.filter((_, itemIndex) => itemIndex !== index)
 }
 
@@ -1654,15 +1238,9 @@ function arrayText(value: unknown) {
   return String(value || '')
 }
 
-function stringValue(value: unknown) {
-  if (Array.isArray(value)) return value.join('\n')
-  return String(value || '')
-}
-
 function applyRegisterConfig(config: LegacyRegisterConfig) {
   registerConfig.value = normalizeRegisterConfig(config)
   syncRegisterProxyControlsFromValue(registerConfig.value.proxy)
-  pruneGptMailStates()
 }
 
 function syncRegisterProxyControlsFromValue(value: unknown) {
@@ -1850,64 +1428,6 @@ async function resetLegacyStats() {
   }
 }
 
-async function resetOutlookPool(scope: OutlookResetScope) {
-  const copy: Record<OutlookResetScope, { title: string; message: string; confirmText: string }> = {
-    retryable: {
-      title: '释放占用/临时失败',
-      message: '只清除 in_use 和 failed 状态，已成功使用和异常邮箱不会释放。',
-      confirmText: '释放',
-    },
-    invalid: {
-      title: '清除异常标记',
-      message: '只清除 token_invalid 和 login_required 状态，不会修复 refresh_token。请确认这些邮箱已经重新授权或重新导入新的 refresh_token，否则会再次失败。',
-      confirmText: '清除',
-    },
-    unused: {
-      title: '清空未使用邮箱',
-      message: '从已保存 Outlook 邮箱池中移除还没有状态记录的邮箱凭据。',
-      confirmText: '清空',
-    },
-    all: {
-      title: '重置全部邮箱状态',
-      message: '清空 Outlook 邮箱池状态记录，所有已保存邮箱会重新变成可领取状态。',
-      confirmText: '重置',
-    },
-  }
-  const ok = await confirmDialog.ask(copy[scope])
-  if (!ok) return
-  legacySaving.value = true
-  try {
-    const response = await registerApi.resetOutlookPool(scope)
-    applyRegisterConfig(response.register)
-    toast.success('邮箱池状态已更新')
-  } catch (error: any) {
-    toast.error(error?.message || '更新邮箱池状态失败')
-  } finally {
-    legacySaving.value = false
-  }
-}
-
-async function retryFailedOutlookPool() {
-  const ok = await confirmDialog.ask({
-    title: '重试临时失败邮箱',
-    message: '会先释放 in_use 和 failed 状态，然后按当前注册任务配置启动。已成功使用和异常邮箱不会释放。',
-    confirmText: '重试',
-  })
-  if (!ok) return
-  legacySaving.value = true
-  try {
-    const resetResponse = await registerApi.resetOutlookPool('retryable')
-    applyRegisterConfig(resetResponse.register)
-    const startResponse = await registerApi.startLegacy()
-    applyRegisterConfig(startResponse.register)
-    toast.success('已释放临时失败邮箱并启动注册任务')
-  } catch (error: any) {
-    toast.error(error?.message || '重试临时失败邮箱失败')
-  } finally {
-    legacySaving.value = false
-  }
-}
-
 function startLiveUpdates() {
   stopLiveUpdates()
   const token = getAuthToken()
@@ -1956,21 +1476,6 @@ function stopPolling() {
   if (pollTimer.value) {
     window.clearInterval(pollTimer.value)
     pollTimer.value = null
-  }
-}
-
-function startGptMailClock() {
-  stopGptMailClock()
-  gptMailClockNow.value = Date.now()
-  gptMailClockTimer.value = window.setInterval(() => {
-    gptMailClockNow.value = Date.now()
-  }, 10_000)
-}
-
-function stopGptMailClock() {
-  if (gptMailClockTimer.value) {
-    window.clearInterval(gptMailClockTimer.value)
-    gptMailClockTimer.value = null
   }
 }
 
@@ -2059,7 +1564,6 @@ function formatTriggerReason(reason: string) {
 }
 
 onMounted(async () => {
-  startGptMailClock()
   await Promise.all([loadRegisterConfig(), loadProxyGroups(), loadAutoRegisterStatus()])
   startLiveUpdates()
 })
@@ -2067,8 +1571,6 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   stopLiveUpdates()
   stopPolling()
-  stopGptMailClock()
-  clearAllGptMailRefreshTimers()
 })
 </script>
 
@@ -2447,25 +1949,6 @@ onBeforeUnmount(() => {
   color: hsl(var(--muted-foreground));
 }
 
-.register-outlook-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.register-gptmail-panel {
-  display: grid;
-  gap: 8px;
-}
-
-.register-gptmail-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
 .register-auto-layout {
   display: grid;
   gap: 14px;
@@ -2697,37 +2180,6 @@ onBeforeUnmount(() => {
   opacity: 0.65;
 }
 
-.register-outlook-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.register-outlook-details {
-  border-top: 1px solid hsl(var(--border) / 0.68);
-  padding-top: 8px;
-}
-
-.register-outlook-details summary {
-  cursor: pointer;
-  width: fit-content;
-  color: hsl(var(--muted-foreground));
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.register-outlook-details summary:hover {
-  color: hsl(var(--foreground));
-}
-
-.register-outlook-detail-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding-top: 8px;
-}
-
 .register-runtime-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2748,7 +2200,6 @@ onBeforeUnmount(() => {
   }
 
   .register-provider-actions,
-  .register-outlook-toolbar,
   .register-runtime-actions,
   .register-auto-actions {
     grid-template-columns: 1fr;
@@ -2767,11 +2218,6 @@ onBeforeUnmount(() => {
   .register-provider-panel-head p {
     text-align: left;
   }
-
-  .register-outlook-toolbar {
-    display: grid;
-  }
-
   .register-runtime-actions {
     display: grid;
   }

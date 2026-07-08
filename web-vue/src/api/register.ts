@@ -1,22 +1,5 @@
 import apiClient from './client'
 
-export type OutlookMailboxParseStats = {
-  raw_lines?: number
-  non_empty?: number
-  valid?: number
-  duplicates?: number
-  invalid?: number
-  skipped?: number
-  existing_total?: number
-  saved_total?: number
-  issues?: Array<{
-    line?: number
-    reason?: string
-    email?: string
-  }>
-  [key: string]: unknown
-}
-
 export type RegisterProvider = {
   id?: string
   provider_id?: string
@@ -73,26 +56,6 @@ export type LegacyRegisterConfig = {
   }>
 }
 
-export type GptMailStatus = {
-  ok?: boolean
-  key_mode?: string
-  api_base?: string
-  source?: string
-  is_active?: boolean
-  daily_limit?: number | null
-  used_today?: number | null
-  remaining_today?: number | null
-  total_limit?: number | null
-  total_usage?: number | null
-  remaining_total?: number | null
-  reset_at?: string
-  seconds_until_reset?: number | null
-  checked_at?: string
-  key_hint?: string
-  local_compose?: boolean
-  default_domain?: string
-}
-
 export type AutoRegisterStatus = {
   enabled: boolean
   last_triggered_at: string | null
@@ -143,15 +106,6 @@ export const registerApi = {
   },
   resetLegacy() {
     return apiClient.post<any, { register: LegacyRegisterConfig }>('/api/register/reset')
-  },
-  resetOutlookPool(scope: 'all' | 'retryable' | 'invalid' | 'unused' | 'failed' = 'all') {
-    return apiClient.post<any, { register: LegacyRegisterConfig }>('/api/register/outlook-pool/reset', { scope })
-  },
-  getGptMailStatus(provider: RegisterProvider, force = true) {
-    return apiClient.post<any, { status: GptMailStatus }>('/api/register/gptmail/status', { provider, force })
-  },
-  refreshGptMailKey(provider: RegisterProvider, force = true) {
-    return apiClient.post<any, { status: GptMailStatus }>('/api/register/gptmail/refresh-key', { provider, force })
   },
   getAutoRegisterStatus() {
     return apiClient.get<any, { status: AutoRegisterStatus }>('/api/register/auto-register/status')

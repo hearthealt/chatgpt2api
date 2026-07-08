@@ -11,35 +11,10 @@ from pathlib import Path
 from services.account_service import account_service
 from services.config import DATA_DIR
 from services.json_file import read_json_object, write_json_file
-from services.register import mail_provider, openai_register
+from services.register import openai_register
 
 
 REGISTER_FILE = DATA_DIR / "register.json"
-
-
-def _serialize_outlook_pool(credentials: list[dict]) -> str:
-    return "\n".join(
-        f'{c["email"]}----{c.get("password", "")}----{c["client_id"]}----{c["refresh_token"]}' for c in credentials
-    )
-
-
-def _merge_outlook_pool(old_text: str, new_text: str) -> str:
-    """合并已存邮箱池与新导入文本，按邮箱去重，新导入的同名邮箱覆盖旧凭据。"""
-    merged: dict[str, dict] = {}
-    for credential in mail_provider.parse_outlook_credentials(old_text or ""):
-        merged[credential["email"].strip().lower()] = credential
-    for credential in mail_provider.parse_outlook_credentials(new_text or ""):
-        merged[credential["email"].strip().lower()] = credential
-    return _serialize_outlook_pool(list(merged.values()))
-
-
-def _outlook_credential_changed(old: dict | None, new: dict) -> bool:
-    if not old:
-        return False
-    for key in ("password", "client_id", "refresh_token"):
-        if str(old.get(key) or "") != str(new.get(key) or ""):
-            return True
-    return False
 
 
 def _safe_bool(value: object, fallback: bool = False) -> bool:
@@ -55,21 +30,6 @@ def _safe_bool(value: object, fallback: bool = False) -> bool:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _provider_id(provider: dict) -> str:
-    return str(provider.get("id") or provider.get("provider_id") or "").strip()
-
-
-def _ensure_provider_id(provider: dict) -> str:
-    provider_id = _provider_id(provider)
-    if provider_id:
-        provider["id"] = provider_id
-        provider.pop("provider_id", None)
-        return provider_id
-    provider_id = f"provider-{uuid.uuid4().hex[:12]}"
-    provider["id"] = provider_id
-    return provider_id
 
 
 def _default_config() -> dict:
@@ -193,135 +153,14 @@ class RegisterService:
     def get(self) -> dict:
         with self._lock:
             snapshot = json.loads(json.dumps({**self._config, "logs": self._logs[-300:]}, ensure_ascii=False))
-        self._redact_outlook_pools(snapshot)
         return snapshot
-
-    @staticmethod
-    def _mask_email(email: str) -> str:
-        local, sep, domain = str(email or "").partition("@")
-        if not sep:
-            return "***"
-        masked = (local[:2] + "***" + local[-1:]) if len(local) > 2 else (local[:1] + "***")
-        return f"{masked}@{domain}"
-
-    def _redact_outlook_pools(self, snapshot: dict) -> None:
-        """把 outlook_token 邮箱池里的密码/refresh_token 从对外输出中抹掉，仅保留脱敏预览与统计。
-
-        mailboxes 改为只写导入框（输出为空），避免把密码与 refresh_token 通过 GET/SSE 反复广播。
-        """
-        mail = snapshot.get("mail")
-        if not isinstance(mail, dict):
-            return
-        providers = mail.get("providers")
-        if not isinstance(providers, list):
-            return
-        for index, provider in enumerate(providers):
-            if not isinstance(provider, dict) or provider.get("type") != "outlook_token":
-                continue
-            pool_text = str(provider.get("mailboxes") or "")
-            base_credentials = mail_provider.parse_outlook_credentials(pool_text)
-            credentials = mail_provider.expand_outlook_aliases(base_credentials, provider)
-            provider["mailboxes"] = ""
-            provider["mailboxes_count"] = len(credentials)
-            provider["mailboxes_base_count"] = len(base_credentials)
-            provider["mailboxes_alias_count"] = max(0, len(credentials) - len(base_credentials))
-            provider["mailboxes_preview"] = [self._mask_email(c["email"]) for c in credentials]
-            provider["mailboxes_stats"] = mail_provider.outlook_token_pool_stats(credentials)
-            provider["mailboxes_parse_stats"] = mail_provider.inspect_outlook_credentials(pool_text)
 
     def _drop_mail_proxy(self) -> None:
         if isinstance(self._config.get("mail"), dict):
             self._config["mail"].pop("proxy", None)
 
-    def _merge_outlook_pools(self, updates: dict) -> None:
-        """对 outlook_token provider：把前端新导入的 mailboxes 与已存池按邮箱合并去重。
-
-        前端 mailboxes 是只写导入框，留空表示不改动；填入的新行追加/覆盖已存凭据。
-        按数组下标与已存的同类型 provider 对齐。
-        """
-        mail = updates.get("mail")
-        if not isinstance(mail, dict) or not isinstance(mail.get("providers"), list):
-            return
-        old_mail = self._config.get("mail") if isinstance(self._config.get("mail"), dict) else {}
-        old_providers = old_mail.get("providers") if isinstance(old_mail.get("providers"), list) else []
-        old_outlook_by_id = {
-            _provider_id(provider): provider
-            for provider in old_providers
-            if isinstance(provider, dict) and provider.get("type") == "outlook_token" and _provider_id(provider)
-        }
-        old_outlook_by_order = [
-            provider
-            for provider in old_providers
-            if isinstance(provider, dict) and provider.get("type") == "outlook_token"
-        ]
-        outlook_index = 0
-        for index, provider in enumerate(mail["providers"]):
-            if not isinstance(provider, dict):
-                continue
-            _ensure_provider_id(provider)
-            if provider.get("type") != "outlook_token":
-                continue
-            provider_id = _provider_id(provider)
-            old = old_outlook_by_id.get(provider_id) or {}
-            if not old and index < len(old_providers) and isinstance(old_providers[index], dict) and old_providers[index].get("type") == "outlook_token":
-                old = old_providers[index]
-            if not old and outlook_index < len(old_outlook_by_order):
-                old = old_outlook_by_order[outlook_index]
-            outlook_index += 1
-            old_text = str(old.get("mailboxes") or "") if old.get("type") == "outlook_token" else ""
-            new_text = str(provider.get("mailboxes") or "")
-            old_credentials = {
-                credential["email"].strip().lower(): credential
-                for credential in mail_provider.parse_outlook_credentials(old_text or "")
-            }
-            new_credentials = mail_provider.parse_outlook_credentials(new_text or "")
-            if new_text.strip():
-                provider["mailboxes"] = _merge_outlook_pool(old_text, new_text)
-                refreshed_credentials = [
-                    credential
-                    for credential in new_credentials
-                    if _outlook_credential_changed(old_credentials.get(credential["email"].strip().lower()), credential)
-                ]
-                if refreshed_credentials:
-                    refreshed_addresses = [
-                        item["email"]
-                        for credential in refreshed_credentials
-                        for item in mail_provider.expand_outlook_aliases([credential], provider)
-                    ]
-                    mail_provider.clear_outlook_token_states(
-                        refreshed_addresses,
-                        states=mail_provider.OUTLOOK_REFRESHED_CREDENTIAL_RESET_STATES,
-                    )
-            elif old_text:
-                provider["mailboxes"] = _merge_outlook_pool(old_text, "")
-            else:
-                provider["mailboxes"] = ""
-            for key in ("mailboxes_count", "mailboxes_base_count", "mailboxes_alias_count", "mailboxes_preview", "mailboxes_stats", "mailboxes_parse_stats"):
-                provider.pop(key, None)
-
-    def _prune_unused_outlook_pools(self) -> int:
-        mail = self._config.get("mail")
-        if not isinstance(mail, dict):
-            return 0
-        providers = mail.get("providers")
-        if not isinstance(providers, list):
-            return 0
-        total_removed = 0
-        for provider in providers:
-            if not isinstance(provider, dict) or provider.get("type") != "outlook_token":
-                continue
-            credentials = mail_provider.parse_outlook_credentials(str(provider.get("mailboxes") or ""))
-            kept, removed = mail_provider.prune_outlook_unused_credentials(credentials, provider)
-            if removed:
-                provider["mailboxes"] = _serialize_outlook_pool(kept)
-                total_removed += removed
-            for key in ("mailboxes_count", "mailboxes_base_count", "mailboxes_alias_count", "mailboxes_preview", "mailboxes_stats", "mailboxes_parse_stats"):
-                provider.pop(key, None)
-        return total_removed
-
     def update(self, updates: dict) -> dict:
         with self._lock:
-            self._merge_outlook_pools(updates)
             self._config = _normalize({**self._config, **updates})
             self._drop_mail_proxy()
             openai_register.config.update({k: self._config[k] for k in ("mail", "proxy", "total", "threads")})
@@ -364,43 +203,6 @@ class RegisterService:
                 openai_register.stats.update({"done": 0, "success": 0, "fail": 0, "start_time": 0.0})
             self._save()
             return self.get()
-
-    def reset_outlook_pool(self, scope: str = "all") -> dict:
-        scope = str(scope or "all").strip().lower()
-        if scope == "unused":
-            with self._lock:
-                removed = self._prune_unused_outlook_pools()
-                openai_register.config.update({k: self._config[k] for k in ("mail", "proxy", "total", "threads")})
-                self._save()
-                self._append_log(f"已清空 Outlook 邮箱池未使用邮箱，移除 {removed} 个", "yellow")
-            return self.get()
-        scope_aliases = {"failed": "retryable", "retryable": "retryable", "invalid": "invalid", "all": "all"}
-        scope = scope_aliases.get(scope, "all")
-        cleared = mail_provider.reset_outlook_token_pool_state(scope)
-        scope_label = {"retryable": "占用/临时失败", "invalid": "异常", "all": "全部"}[scope]
-        with self._lock:
-            self._append_log(
-                f"已重置 Outlook 邮箱池状态（范围={scope_label}），清除 {cleared} 条记录",
-                "yellow",
-            )
-        return self.get()
-
-    def _mail_config_with_proxy(self) -> dict:
-        mail = json.loads(json.dumps(self._config.get("mail") if isinstance(self._config.get("mail"), dict) else {}, ensure_ascii=False))
-        use_register_proxy = _safe_bool(mail.get("api_use_register_proxy"), True)
-        mail["api_use_register_proxy"] = use_register_proxy
-        mail["proxy"] = str(self._config.get("proxy") or "").strip() if use_register_proxy else ""
-        return mail
-
-    def gptmail_status(self, provider: dict | None = None, force: bool = False) -> dict:
-        with self._lock:
-            mail = self._mail_config_with_proxy()
-        return mail_provider.gptmail_status(mail, provider, force=force)
-
-    def refresh_gptmail_public_key(self, provider: dict | None = None, force: bool = True) -> dict:
-        with self._lock:
-            mail = self._mail_config_with_proxy()
-        return mail_provider.refresh_gptmail_public_key(mail, provider, force=force)
 
     def _append_log(self, text: str, color: str = "") -> None:
         with self._lock:
@@ -613,63 +415,80 @@ class RegisterService:
                     self._append_log("[自动注册] 失败：没有可用的免费邮箱来源（付费服务不参与自动注册）", "red")
                 return
 
-            # 临时修改配置以执行自动注册
+            count = max(1, min(5, int(count or 1)))
             original_config = {
                 "enabled": self._config["enabled"],
                 "total": self._config["total"],
                 "mode": self._config["mode"],
             }
             original_mail = json.loads(json.dumps(mail, ensure_ascii=False))
+            configured = False
+            current_thread = threading.current_thread()
 
-            # 设置为单次注册模式，并临时禁用付费提供商
-            with self._lock:
-                self._config["enabled"] = True
-                self._config["total"] = count
-                self._config["mode"] = "total"
-                # 临时禁用付费邮箱提供商
-                for provider in self._config["mail"].get("providers", []):
-                    if isinstance(provider, dict) and provider.get("type") in PAID_PROVIDER_TYPES:
-                        provider["_auto_register_disabled"] = provider.get("enable")
-                        provider["enable"] = False
-                openai_register.config.update({k: self._config[k] for k in ("mail", "proxy", "total", "threads")})
-
-            # 等待注册完成
-            start_time = time.time()
-            timeout = 600  # 10分钟超时
-
-            while time.time() - start_time < timeout:
-                stats = self.get().get("stats", {})
-                done = stats.get("done", 0)
-                success = stats.get("success", 0)
-
-                if done >= count:
-                    # 注册完成
-                    with self._lock:
-                        if success > 0:
-                            self._auto_register_state["consecutive_failures"] = 0
-                            self._auto_register_state["total_auto_registered"] += success
-                            self._append_log(f"[自动注册] 完成，成功注册 {success} 个账号", "green")
-                        else:
-                            self._auto_register_state["consecutive_failures"] += 1
-                            if self._auto_register_state["consecutive_failures"] == 1:
-                                self._auto_register_state["last_failure_reset_at"] = _now()
-                            self._append_log(f"[自动注册] 失败，未成功注册任何账号", "red")
-                    break
-
-                time.sleep(2)
-            else:
-                # 超时
+            try:
                 with self._lock:
-                    self._auto_register_state["consecutive_failures"] += 1
-                    self._append_log(f"[自动注册] 超时：10分钟内未完成注册", "red")
+                    if self._runner and self._runner.is_alive() and self._runner is not current_thread:
+                        self._auto_register_state["consecutive_failures"] += 1
+                        if self._auto_register_state["consecutive_failures"] == 1:
+                            self._auto_register_state["last_failure_reset_at"] = _now()
+                        self._append_log("[自动注册] 失败：已有注册任务正在运行", "red")
+                        return
 
-            # 恢复原始配置（包括付费提供商的启用状态）
-            with self._lock:
-                self._config["enabled"] = original_config["enabled"]
-                self._config["total"] = original_config["total"]
-                self._config["mode"] = original_config["mode"]
-                self._config["mail"] = original_mail
-                openai_register.config.update({k: self._config[k] for k in ("mail", "proxy", "total", "threads")})
+                    self._runner = current_thread
+                    self._config["enabled"] = True
+                    self._config["total"] = count
+                    self._config["mode"] = "total"
+                    configured = True
+
+                    # 临时禁用付费邮箱提供商
+                    for provider in self._config["mail"].get("providers", []):
+                        if isinstance(provider, dict) and provider.get("type") in PAID_PROVIDER_TYPES:
+                            provider["_auto_register_disabled"] = provider.get("enable")
+                            provider["enable"] = False
+
+                    metrics = self._pool_metrics()
+                    self._config["stats"] = {
+                        "job_id": uuid.uuid4().hex,
+                        "success": 0,
+                        "fail": 0,
+                        "done": 0,
+                        "running": 0,
+                        "threads": self._config["threads"],
+                        **metrics,
+                        "started_at": _now(),
+                        "updated_at": _now(),
+                    }
+                    openai_register.config.update({k: self._config[k] for k in ("mail", "proxy", "total", "threads")})
+                    with openai_register.stats_lock:
+                        openai_register.stats.update({"done": 0, "success": 0, "fail": 0, "start_time": time.time()})
+                    self._save()
+
+                # 当前方法已经在后台线程中运行，直接复用注册 runner 逻辑。
+                self._run()
+
+                stats = self.get().get("stats", {})
+                success = int(stats.get("success") or 0)
+                with self._lock:
+                    if success > 0:
+                        self._auto_register_state["consecutive_failures"] = 0
+                        self._auto_register_state["total_auto_registered"] += success
+                        self._append_log(f"[自动注册] 完成，成功注册 {success} 个账号", "green")
+                    else:
+                        self._auto_register_state["consecutive_failures"] += 1
+                        if self._auto_register_state["consecutive_failures"] == 1:
+                            self._auto_register_state["last_failure_reset_at"] = _now()
+                        self._append_log("[自动注册] 失败，未成功注册任何账号", "red")
+            finally:
+                if configured:
+                    with self._lock:
+                        self._config["enabled"] = original_config["enabled"]
+                        self._config["total"] = original_config["total"]
+                        self._config["mode"] = original_config["mode"]
+                        self._config["mail"] = original_mail
+                        if self._runner is current_thread:
+                            self._runner = None
+                        openai_register.config.update({k: self._config[k] for k in ("mail", "proxy", "total", "threads")})
+                        self._save()
 
         except Exception as e:
             with self._lock:

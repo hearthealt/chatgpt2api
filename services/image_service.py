@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, Response
 from PIL import Image, ImageOps
 
 from services.config import config
+from services.deleted_images_service import record_deleted_images
 from services.image_storage_service import image_storage_service
 from services.image_tags_service import load_tags, remove_tags
 from utils.log import logger
@@ -340,6 +341,7 @@ def delete_images(paths: list[str] | None = None, start_date: str = "", end_date
         for item in image_storage_service.list_items("", start_date=start_date, end_date=end_date)
     ] if all_matching else (paths or [])
     removed = 0
+    removed_paths: list[str] = []
     for item in targets:
         path = (root / item).resolve()
         try:
@@ -348,10 +350,19 @@ def delete_images(paths: list[str] | None = None, start_date: str = "", end_date
             continue
         if image_storage_service.delete(item):
             removed += 1
+            removed_paths.append(item)
         for thumbnail in (_thumbnail_path(item), config.image_thumbnails_dir / _safe_relative_path(item)):
             if thumbnail.is_file():
                 thumbnail.unlink()
         remove_tags(item)
+    if removed_paths:
+        record_deleted_images(removed_paths)
+        try:
+            from services.image_task_service import image_task_service
+
+            image_task_service.mark_deleted_images(removed_paths)
+        except Exception:
+            pass
     _cleanup_empty_dirs(root)
     _cleanup_empty_dirs(config.image_thumbnails_dir)
     return {"removed": removed}

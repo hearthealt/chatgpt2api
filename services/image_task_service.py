@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from services.config import DATA_DIR, config
 from services.content_filter import request_text
+from services.deleted_images_service import deleted_image_paths, image_rel_from_url, is_deleted_image_ref
 from services.json_file import read_json_file, write_json_file
 from services.log_service import LOG_TYPE_CALL, log_service
 from services.protocol import openai_v1_image_edit, openai_v1_image_generations
@@ -225,7 +226,9 @@ class ImageTaskService:
         owner = _owner_id(identity)
         requested_ids = [_clean(task_id) for task_id in task_ids if _clean(task_id)]
         with self._lock:
-            if self._cleanup_locked():
+            changed = self._cleanup_locked()
+            changed = self._mark_deleted_images_locked(deleted_image_paths()) or changed
+            if changed:
                 self._save_locked()
             items = []
             missing_ids = []
@@ -244,6 +247,43 @@ class ImageTaskService:
                 items.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
                 missing_ids = []
             return {"items": items, "missing_ids": missing_ids}
+
+    def _mark_deleted_images_locked(self, deleted: set[str]) -> int:
+        changed = 0
+        for task in self._tasks.values():
+            data = task.get("data")
+            if not isinstance(data, list) or not data:
+                continue
+            kept: list[Any] = []
+            removed = False
+            for asset in data:
+                refs: list[object] = []
+                if isinstance(asset, dict):
+                    refs.extend([asset.get("path"), asset.get("url")])
+                if any(is_deleted_image_ref(ref, deleted, include_missing=True) for ref in refs):
+                    removed = True
+                    continue
+                kept.append(asset)
+            if not removed:
+                continue
+            changed += 1
+            task["data"] = kept
+            task["updated_at"] = _now_iso()
+            task["updated_ts"] = time.time()
+            if not kept:
+                task["status"] = TASK_STATUS_ERROR
+                task["error"] = "此图片已删除"
+                task["error_code"] = "image_deleted"
+        return changed
+
+    def mark_deleted_images(self, paths: list[str]) -> int:
+        deleted = {image_rel_from_url(path) for path in paths}
+        deleted = {path for path in deleted if path}
+        with self._lock:
+            changed = self._mark_deleted_images_locked(deleted)
+            if changed:
+                self._save_locked()
+            return changed
 
     def _submit(
         self,

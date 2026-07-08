@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.2 - 2026-07-08
+
++ [修复] 自动注册触发后不会实际启动注册 worker 的问题；现在会重置统计、执行注册任务，并在结束后恢复原注册配置和邮箱来源状态。
++ [修复] Turnstile VM 回调参数错误，避免 Sentinel SO Token 生成时把寄存器编号误传给回调。
++ [修复] Sentinel 无 PoW 场景复用同一个 requirements token，避免 `p` / `t` 不一致导致校验失败。
++ [修复] Cloudflare clearance 刷新后，创建账号资料重试会使用最新浏览器 fingerprint。
++ [修复] 图片管理删除图片后，同步标记对话画图任务并过滤日志管理里的已删除图片预览。
++ [优化] 注册流程支持多套 Chrome 指纹，并将 headers、OAuth token 请求和 Sentinel 请求保持一致。
++ [清理] 注册邮箱来源保持移除 GPTMail 和 Outlook Token，不再恢复旧 provider 分发。
++ [重构] 邮箱 provider 实现合并到 `services/register/mail_provider.py`，当前仅保留 Cloudflare Temp Email、TempMail.lol、LuckMail、Hotmail007 和 Microsoft Account Manager。
++ [调整] `gpt-image-2` 底层图片模型映射调整为 `gpt-5-5-thinking`。
+
 ## 1.1.1 - 2026-07-06
 
 + [优化] 注册账号页面布局，调整任务配置、邮箱来源、自动注册和执行控制区域的排版。

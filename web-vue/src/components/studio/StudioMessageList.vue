@@ -119,7 +119,31 @@
                   </template>
 
                   <template v-else>
-                    <template v-if="!message.task || message.task.status === 'queued' || message.task.status === 'running'">
+                    <div v-if="message.isDeletedImageMessage" class="studio-result-block">
+                      <div class="studio-result-grid" :class="{ 'is-single': message.imageSlotCount <= 1 }">
+                        <div
+                          v-for="slot in message.pendingSlots"
+                          :key="`${message.id}-deleted-${slot}`"
+                          class="studio-result-item"
+                        >
+                          <div class="studio-result-media studio-result-deleted">
+                            <Icon icon="lucide:image-off" class="h-6 w-6" />
+                            <span>此图片已删除</span>
+                            <small>已在图片管理中移除</small>
+                          </div>
+                          <div v-if="message.imageSlotCount > 1" class="studio-result-caption">
+                            <span>图片 {{ slot + 1 }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div v-else-if="message.status === 'error' || message.task?.status === 'error'" class="studio-image-status is-error">
+                      <Icon icon="lucide:circle-alert" class="h-4 w-4" />
+                      <span>{{ message.error || message.primaryMessage || '上游没有返回可用图片。' }}</span>
+                    </div>
+
+                    <template v-else-if="!message.task || message.task.status === 'queued' || message.task.status === 'running'">
                       <div class="studio-result-block studio-result-block-pending">
                         <div class="studio-result-grid" :class="{ 'is-single': message.imageSlotCount <= 1 }">
                           <div
@@ -141,12 +165,7 @@
                     </template>
 
                     <template v-else>
-                      <div v-if="message.task?.status === 'error'" class="studio-image-status is-error">
-                        <Icon icon="lucide:circle-alert" class="h-4 w-4" />
-                        <span>{{ message.primaryMessage || '上游没有返回可用图片。' }}</span>
-                      </div>
-
-                      <div v-else class="studio-result-block">
+                      <div class="studio-result-block">
                         <div class="studio-result-grid" :class="{ 'is-single': message.assets.length <= 1 }">
                           <div
                             v-for="(asset, assetIndex) in message.assets"
@@ -305,6 +324,7 @@ type StudioMessageView = StudioMessage & {
   assets: ImageTaskAsset[]
   isImageMessage: boolean
   isPendingImageMessage: boolean
+  isDeletedImageMessage: boolean
   imageSlotCount: number
   pendingSlots: number[]
   imagePendingStageText: string
@@ -359,6 +379,7 @@ function buildMessageView(message: StudioMessage): StudioMessageView {
   const task = message.taskId ? taskById.value.get(message.taskId) : undefined
   const assets = task?.data?.length ? task.data.filter((asset) => Boolean(assetUrl(asset))) : []
   const isImageMessage = message.role === 'assistant' && message.mode === 'image'
+  const isDeletedImageMessage = isImageMessage && message.status === 'error' && Boolean(message.taskId) && !task
   const imageSlotCount = computeImageSlotCount(message, task, assets.length)
   const isCollapsible = computeIsCollapsibleMessage(message)
   const isCollapsed = isCollapsible ? computeIsMessageCollapsed(message) : false
@@ -376,7 +397,8 @@ function buildMessageView(message: StudioMessage): StudioMessageView {
     task,
     assets,
     isImageMessage,
-    isPendingImageMessage: isImageMessage && (!task || (task.status !== 'success' && task.status !== 'error' && assets.length === 0)),
+    isPendingImageMessage: isImageMessage && message.status !== 'error' && (!task || (task.status !== 'success' && task.status !== 'error' && assets.length === 0)),
+    isDeletedImageMessage,
     imageSlotCount,
     pendingSlots: Array.from({ length: imageSlotCount }, (_, index) => index),
     imagePendingStageText: imageTaskProgressLabel(task),
@@ -1739,6 +1761,34 @@ defineExpose({
 .studio-result-placeholder small {
   color: hsl(var(--muted-foreground) / 0.78);
   font-size: 0.75rem;
+}
+
+.studio-result-deleted {
+  cursor: default;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-height: 8rem;
+  border-style: dashed;
+  border-color: rgb(248 113 113 / 0.5);
+  background: rgb(254 242 242 / 0.55);
+  color: rgb(185 28 28);
+  text-align: center;
+  padding: 1rem;
+}
+
+.studio-result-deleted svg {
+  color: rgb(220 38 38);
+}
+
+.studio-result-deleted span {
+  color: rgb(185 28 28);
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+
+.studio-result-deleted small {
+  color: rgb(185 28 28 / 0.72);
+  font-size: 0.72rem;
 }
 
 .studio-result-caption {

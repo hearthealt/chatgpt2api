@@ -17,6 +17,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from services.config import DATA_DIR
+from services.deleted_images_service import deleted_image_paths, scrub_deleted_image_refs
 from services.protocol.error_response import anthropic_error_response, openai_error_response
 from services.realtime_monitor_service import realtime_monitor_service
 from utils.diagnostics import exception_diagnostic_fields
@@ -259,10 +260,11 @@ class LogService:
         if not self.path.exists():
             return []
         items: list[dict[str, Any]] = []
+        deleted = deleted_image_paths()
         for item in self._iter_parsed_reverse():
             if not self._matches_filters(item, type=type, start_date=start_date, end_date=end_date):
                 continue
-            items.append(item)
+            items.append(scrub_deleted_image_refs(item, deleted, include_missing=True))
             if len(items) >= limit:
                 break
         return items
@@ -291,6 +293,7 @@ class LogService:
         models: Counter[str] = Counter()
         accounts: Counter[str] = Counter()
         stats = Counter()
+        deleted = deleted_image_paths()
 
         for item in self._iter_parsed_reverse() or ():
             if not self._matches_extended_filters(
@@ -332,7 +335,7 @@ class LogService:
             if total <= safe_offset:
                 continue
             if len(items) < safe_limit:
-                items.append(item)
+                items.append(scrub_deleted_image_refs(item, deleted, include_missing=True))
 
         return {
             "items": items,

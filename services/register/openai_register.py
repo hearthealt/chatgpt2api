@@ -48,13 +48,73 @@ platform_oauth_client_id = "app_2SKx67EdpoN0G6j64rFvigXD"
 platform_oauth_redirect_uri = f"{platform_base}/auth/callback"
 platform_oauth_audience = "https://api.openai.com/v1"
 platform_auth0_client = "eyJuYW1lIjoiYXV0aDAtc3BhLWpzIiwidmVyc2lvbiI6IjEuMjEuMCJ9"
-user_agent = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/145.0.0.0 Safari/537.36"
+REGISTER_BROWSER_PROFILES: tuple[dict[str, str], ...] = (
+    {
+        "impersonate": "chrome142",
+        "major": "142",
+        "full_version": "142.0.0.0",
+        "platform_version": "10.0.0",
+        "accept_language": "en-US,en;q=0.9",
+    },
+    {
+        "impersonate": "chrome136",
+        "major": "136",
+        "full_version": "136.0.0.0",
+        "platform_version": "10.0.0",
+        "accept_language": "en-US,en;q=0.9",
+    },
+    {
+        "impersonate": "chrome131",
+        "major": "131",
+        "full_version": "131.0.0.0",
+        "platform_version": "10.0.0",
+        "accept_language": "en-US,en;q=0.9",
+    },
 )
-sec_ch_ua = '"Google Chrome";v="145", "Not?A_Brand";v="8", "Chromium";v="145"'
-sec_ch_ua_full_version_list = '"Chromium";v="145.0.0.0", "Not:A-Brand";v="99.0.0.0", "Google Chrome";v="145.0.0.0"'
+
+
+def _chrome_user_agent(major: str, full_version: str) -> str:
+    return (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        f"Chrome/{full_version} Safari/537.36"
+    )
+
+
+def _chrome_sec_ch_ua(major: str) -> str:
+    return f'"Chromium";v="{major}", "Google Chrome";v="{major}", "Not_A Brand";v="99"'
+
+
+def _chrome_sec_ch_ua_full_version_list(major: str, full_version: str) -> str:
+    return (
+        f'"Chromium";v="{full_version}", '
+        f'"Google Chrome";v="{full_version}", '
+        '"Not_A Brand";v="99.0.0.0"'
+    )
+
+
+def _complete_browser_fingerprint(profile: dict[str, str]) -> dict[str, str]:
+    major = str(profile.get("major") or "142").strip()
+    full_version = str(profile.get("full_version") or f"{major}.0.0.0").strip()
+    return {
+        **profile,
+        "major": major,
+        "full_version": full_version,
+        "user_agent": str(profile.get("user_agent") or _chrome_user_agent(major, full_version)),
+        "sec_ch_ua": str(profile.get("sec_ch_ua") or _chrome_sec_ch_ua(major)),
+        "sec_ch_ua_full_version_list": str(
+            profile.get("sec_ch_ua_full_version_list") or _chrome_sec_ch_ua_full_version_list(major, full_version)
+        ),
+        "accept_language": str(profile.get("accept_language") or "en-US,en;q=0.9"),
+        "platform_version": str(profile.get("platform_version") or "10.0.0"),
+        "impersonate": str(profile.get("impersonate") or "chrome"),
+    }
+
+
+DEFAULT_BROWSER_FINGERPRINT = _complete_browser_fingerprint(REGISTER_BROWSER_PROFILES[0])
+user_agent = DEFAULT_BROWSER_FINGERPRINT["user_agent"]
+sec_ch_ua = DEFAULT_BROWSER_FINGERPRINT["sec_ch_ua"]
+sec_ch_ua_full_version_list = DEFAULT_BROWSER_FINGERPRINT["sec_ch_ua_full_version_list"]
 default_timeout = 30
 print_lock = threading.Lock()
 stats_lock = threading.Lock()
@@ -109,6 +169,59 @@ navigate_headers = {
     "upgrade-insecure-requests": "1",
     "user-agent": user_agent,
 }
+
+
+def _browser_fingerprint(fingerprint: dict[str, str] | None = None) -> dict[str, str]:
+    return _complete_browser_fingerprint(fingerprint or DEFAULT_BROWSER_FINGERPRINT)
+
+
+def _header_fingerprint(headers: dict[str, str], fingerprint: dict[str, str] | None = None) -> dict[str, str]:
+    fp = _browser_fingerprint(fingerprint)
+    next_headers = dict(headers)
+    next_headers["user-agent"] = fp["user_agent"]
+    next_headers["sec-ch-ua"] = fp["sec_ch_ua"]
+    if "sec-ch-ua-full-version-list" in next_headers:
+        next_headers["sec-ch-ua-full-version-list"] = fp["sec_ch_ua_full_version_list"]
+    if "sec-ch-ua-platform-version" in next_headers:
+        next_headers["sec-ch-ua-platform-version"] = f'"{fp["platform_version"]}"'
+    if "accept-language" in next_headers:
+        next_headers["accept-language"] = fp["accept_language"]
+    return next_headers
+
+
+def _extract_chrome_version_from_user_agent(value: str) -> tuple[str, str]:
+    ua = str(value or "")
+    for marker in ("Chrome/", "Chromium/", "Edg/"):
+        if marker not in ua:
+            continue
+        tail = ua.split(marker, 1)[1]
+        version = tail.split(" ", 1)[0].strip()
+        major = version.split(".", 1)[0].strip()
+        if major.isdigit():
+            return major, version or f"{major}.0.0.0"
+    return "", ""
+
+
+def _fingerprint_with_user_agent(fingerprint: dict[str, str] | None, value: str) -> dict[str, str]:
+    ua = str(value or "").strip()
+    if not ua:
+        return _browser_fingerprint(fingerprint)
+    fp = _browser_fingerprint(fingerprint)
+    major, full_version = _extract_chrome_version_from_user_agent(ua)
+    major = major or fp["major"]
+    full_version = full_version or f"{major}.0.0.0"
+    return {
+        **fp,
+        "major": major,
+        "full_version": full_version,
+        "user_agent": ua,
+        "sec_ch_ua": _chrome_sec_ch_ua(major),
+        "sec_ch_ua_full_version_list": _chrome_sec_ch_ua_full_version_list(major, full_version),
+    }
+
+
+def _make_browser_fingerprint() -> dict[str, str]:
+    return _complete_browser_fingerprint(secrets.choice(REGISTER_BROWSER_PROFILES))
 
 
 def log(text: str, color: str = "") -> None:
@@ -260,30 +373,48 @@ def wait_for_code(mailbox: dict, register_proxy: str = "") -> str | None:
     return mail_provider.wait_for_code(_mail_config(register_proxy), mailbox)
 
 
-from utils.sentinel import SentinelTokenGenerator, build_sentinel_token as _build_sentinel_token_tuple  # noqa: F401
+from utils.sentinel import (
+    SentinelTokenGenerator,
+    build_sentinel_token as _build_sentinel_token_tuple,
+    build_sentinel_with_so_token,
+)
 
 
-def build_sentinel_token(session: requests.Session, device_id: str, flow: str) -> str:
+def build_sentinel_token(
+    session: requests.Session,
+    device_id: str,
+    flow: str,
+    fingerprint: dict[str, str] | None = None,
+) -> str:
     """请求 sentinel token，返回 sentinel header 字符串（兼容旧接口）。"""
-    sentinel_val, _oai_sc_val = _build_sentinel_token_tuple(session, device_id, flow, user_agent=user_agent, sec_ch_ua=sec_ch_ua)
+    fp = _browser_fingerprint(fingerprint)
+    sentinel_val, _oai_sc_val = _build_sentinel_token_tuple(
+        session,
+        device_id,
+        flow,
+        user_agent=fp["user_agent"],
+        sec_ch_ua=fp["sec_ch_ua"],
+    )
     return sentinel_val
 
 
-def create_session(proxy: str = "") -> Any:
+def create_session(proxy: str = "", fingerprint: dict[str, str] | None = None) -> Any:
+    fp = _browser_fingerprint(fingerprint)
     kwargs = proxy_settings.build_session_kwargs(
         proxy=proxy,
         upstream=True,
-        impersonate="chrome",
+        impersonate=fp["impersonate"],
         verify=False,
     )
-    return requests.Session(**kwargs)
+    session = requests.Session(**kwargs)
+    session.headers.update({"user-agent": fp["user_agent"]})
+    return session
 
 
 def _apply_clearance_to_session(session: requests.Session, bundle: ClearanceBundle | None) -> None:
     if bundle is None:
         return
     if bundle.user_agent:
-        session.headers["User-Agent"] = bundle.user_agent
         session.headers["user-agent"] = bundle.user_agent
     for name, value in bundle.cookies.items():
         try:
@@ -330,15 +461,20 @@ def request_with_local_retry(session: requests.Session, method: str, url: str, r
     return None, last_error
 
 
-def validate_otp(session: requests.Session, device_id: str, code: str):
-    headers = dict(common_headers)
+def validate_otp(
+    session: requests.Session,
+    device_id: str,
+    code: str,
+    fingerprint: dict[str, str] | None = None,
+):
+    headers = _header_fingerprint(common_headers, fingerprint)
     headers["referer"] = f"{auth_base}/email-verification"
     headers["oai-device-id"] = device_id
     headers.update(_make_trace_headers())
     resp, error = request_with_local_retry(session, "post", f"{auth_base}/api/accounts/email-otp/validate", json={"code": code}, headers=headers, verify=False)
     if resp is not None and resp.status_code == 200:
         return resp, ""
-    headers["openai-sentinel-token"] = build_sentinel_token(session, device_id, "authorize_continue")
+    headers["openai-sentinel-token"] = build_sentinel_token(session, device_id, "authorize_continue", fingerprint)
     resp, error = request_with_local_retry(session, "post", f"{auth_base}/api/accounts/email-otp/validate", json={"code": code}, headers=headers, verify=False)
     return resp, error
 
@@ -394,10 +530,12 @@ def request_platform_oauth_token(
     code: str,
     code_verifier: str,
     errors: list[str] | None = None,
+    fingerprint: dict[str, str] | None = None,
 ) -> dict | None:
+    fp = _browser_fingerprint(fingerprint)
     headers = {
         "accept": "*/*",
-        "accept-language": "zh-CN,zh;q=0.9",
+        "accept-language": fp["accept_language"],
         "auth0-client": platform_auth0_client,
         "cache-control": "no-cache",
         "content-type": "application/json",
@@ -405,13 +543,13 @@ def request_platform_oauth_token(
         "pragma": "no-cache",
         "priority": "u=1, i",
         "referer": f"{platform_base}/",
-        "sec-ch-ua": sec_ch_ua,
+        "sec-ch-ua": fp["sec_ch_ua"],
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": '"Windows"',
         "sec-fetch-dest": "empty",
         "sec-fetch-mode": "cors",
         "sec-fetch-site": "same-site",
-        "user-agent": user_agent,
+        "user-agent": fp["user_agent"],
     }
     try:
         resp = session.post(
@@ -448,8 +586,9 @@ def request_platform_oauth_token_legacy(
     proxy: str = "",
     errors: list[str] | None = None,
     fresh_session: bool = False,
+    fingerprint: dict[str, str] | None = None,
 ) -> dict | None:
-    token_session = create_session(proxy) if fresh_session else session
+    token_session = create_session(proxy, fingerprint) if fresh_session else session
     resp = None
     try:
         resp = token_session.post(
@@ -494,12 +633,14 @@ def extract_callback_via_consent(
     device_id: str,
     proxy: str = "",
     user_agent_override: str = "",
+    fingerprint: dict[str, str] | None = None,
 ) -> dict[str, str] | None:
     current = _absolute_auth_url(consent_url)
     if not current:
         return None
+    fp = _fingerprint_with_user_agent(fingerprint, user_agent_override) if user_agent_override else _browser_fingerprint(fingerprint)
     for _ in range(10):
-        headers = _headers_with_clearance(dict(navigate_headers), current, proxy, user_agent_override)
+        headers = _headers_with_clearance(_header_fingerprint(navigate_headers, fp), current, proxy, user_agent_override)
         resp, _error = request_with_local_retry(session, "get", current, headers=headers, verify=False, allow_redirects=False)
         if resp is None:
             return None
@@ -526,7 +667,7 @@ def extract_callback_via_consent(
         return None
 
     url = f"{auth_base}/api/accounts/workspace/select"
-    headers = dict(common_headers)
+    headers = _header_fingerprint(common_headers, fp)
     headers["referer"] = current
     headers["oai-device-id"] = device_id
     headers.update(_make_trace_headers())
@@ -547,7 +688,7 @@ def extract_callback_via_consent(
     if not org_id:
         return None
     org_url = f"{auth_base}/api/accounts/organization/select"
-    org_headers = dict(common_headers)
+    org_headers = _header_fingerprint(common_headers, fp)
     org_headers["referer"] = str(ws_data.get("continue_url") or current)
     org_headers["oai-device-id"] = device_id
     org_headers.update(_make_trace_headers())
@@ -569,13 +710,22 @@ def exchange_tokens_from_continue_url(
     proxy: str = "",
     user_agent_override: str = "",
     errors: list[str] | None = None,
+    fingerprint: dict[str, str] | None = None,
 ) -> dict | None:
     callback = extract_oauth_callback_params_from_url(continue_url)
-    callback = callback or extract_callback_via_consent(session, continue_url, device_id, proxy, user_agent_override)
+    fp = _fingerprint_with_user_agent(fingerprint, user_agent_override) if user_agent_override else _browser_fingerprint(fingerprint)
+    callback = callback or extract_callback_via_consent(
+        session,
+        continue_url,
+        device_id,
+        proxy,
+        user_agent_override,
+        fp,
+    )
     if not callback:
         url = _absolute_auth_url(continue_url)
         try:
-            headers = _headers_with_clearance(dict(navigate_headers), url, proxy, user_agent_override)
+            headers = _headers_with_clearance(_header_fingerprint(navigate_headers, fp), url, proxy, user_agent_override)
             resp = session.get(url, headers=headers, allow_redirects=True, verify=False, timeout=30)
             callback = extract_oauth_callback_params_from_url(str(getattr(resp, "url", "") or ""))
             if not callback:
@@ -595,13 +745,14 @@ def exchange_tokens_from_continue_url(
     if not code:
         _append_exchange_error(errors, f"未拿到 OAuth callback code: continue={_safe_url_for_log(continue_url)}")
         return None
-    return request_platform_oauth_token_legacy(session, code, code_verifier, proxy, errors, fresh_session=True)
+    return request_platform_oauth_token_legacy(session, code, code_verifier, proxy, errors, fresh_session=True, fingerprint=fp)
 
 
 class PlatformRegistrar:
     def __init__(self, proxy: str = "") -> None:
         self.proxy = str(proxy or "").strip()
-        self.session = create_session(self.proxy)
+        self.fingerprint = _make_browser_fingerprint()
+        self.session = create_session(self.proxy, self.fingerprint)
         self.clearance_user_agent = ""
         self.clearance_failure_reason = ""
         self.device_id = str(uuid.uuid4())
@@ -612,13 +763,13 @@ class PlatformRegistrar:
         self.session.close()
 
     def _navigate_headers(self, referer: str = "") -> dict[str, str]:
-        headers = dict(navigate_headers)
+        headers = _header_fingerprint(navigate_headers, self.fingerprint)
         if referer:
             headers["referer"] = referer
         return headers
 
     def _json_headers(self, referer: str) -> dict[str, str]:
-        headers = dict(common_headers)
+        headers = _header_fingerprint(common_headers, self.fingerprint)
         headers["referer"] = referer
         headers["oai-device-id"] = self.device_id
         headers.update(_make_trace_headers())
@@ -643,6 +794,8 @@ class PlatformRegistrar:
         if bundle is not None:
             _apply_clearance_to_session(self.session, bundle)
             self.clearance_user_agent = bundle.user_agent or self.clearance_user_agent
+            if bundle.user_agent:
+                self.fingerprint = _fingerprint_with_user_agent(self.fingerprint, bundle.user_agent)
             step(index, "Cloudflare clearance 刷新完成，重试当前请求", "yellow")
         else:
             self.clearance_failure_reason = "clearance 刷新未返回可用 Cookie，请检查 FlareSolverr URL、代理和出口 IP"
@@ -720,7 +873,7 @@ class PlatformRegistrar:
 
         def send():
             headers = self._json_headers(f"{auth_base}/log-in?usernameKind=email")
-            headers["openai-sentinel-token"] = build_sentinel_token(self.session, self.device_id, "authorize_continue")
+            headers["openai-sentinel-token"] = build_sentinel_token(self.session, self.device_id, "authorize_continue", self.fingerprint)
             headers = _headers_with_clearance(headers, url, self.proxy, self.clearance_user_agent)
             return request_with_local_retry(
                 self.session,
@@ -769,23 +922,21 @@ class PlatformRegistrar:
         return code == "invalid_state" or "sign-in session is no longer valid" in message
 
     def _passwordless_login(self, email: str, mailbox: dict, index: int) -> dict:
-        if str(mailbox.get("provider") or "") != "outlook_token":
-            raise RuntimeError("OpenAI 返回登录流，当前邮箱来源无法读取 Microsoft 登录验证码")
-        step(index, "OpenAI 返回登录流，转入 Microsoft passwordless 登录", "yellow")
+        step(index, "OpenAI 返回登录流，转入 passwordless 登录", "yellow")
         for attempt in range(2):
             if attempt:
-                step(index, "Microsoft 登录会话失效，重新发起 passwordless 登录", "yellow")
+                step(index, "登录会话失效，重新发起 passwordless 登录", "yellow")
                 self._reset_auth_cookies()
                 self._platform_authorize(email, index, screen_hint="login_or_signup")
             self._authorize_continue_login(email, index)
             mailbox["_received_after"] = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
             self._send_passwordless_otp(index)
-            step(index, "开始等待 Microsoft 登录验证码")
+            step(index, "开始等待登录验证码")
             code = wait_for_code(mailbox, register_proxy=self.proxy)
             if not code:
-                raise RuntimeError("等待 Microsoft 登录验证码超时")
-            step(index, f"收到 Microsoft 登录验证码: {code}")
-            resp, error = validate_otp(self.session, self.device_id, code)
+                raise RuntimeError("等待登录验证码超时")
+            step(index, f"收到登录验证码: {code}")
+            resp, error = validate_otp(self.session, self.device_id, code, self.fingerprint)
             if resp is not None and resp.status_code == 200:
                 break
             body = ""
@@ -800,10 +951,10 @@ class PlatformRegistrar:
         continue_url = str(data.get("continue_url") or "").strip() or f"{auth_base}/sign-in-with-chatgpt/platform/consent"
         if _url_path(continue_url) == "/about-you":
             first_name, last_name = _random_name()
-            step(index, "Microsoft 登录验证完成，需要完善账号资料")
+            step(index, "登录验证完成，需要完善账号资料")
             self._create_account(f"{first_name} {last_name}", _random_birthdate(), index)
             return self._exchange_registered_tokens(index)
-        step(index, "Microsoft 登录验证完成，开始换 token")
+        step(index, "登录验证完成，开始换 token")
         exchange_errors: list[str] = []
         tokens = exchange_tokens_from_continue_url(
             self.session,
@@ -813,18 +964,19 @@ class PlatformRegistrar:
             self.proxy,
             self.clearance_user_agent,
             exchange_errors,
+            self.fingerprint,
         )
         if not tokens:
             detail = "；".join(exchange_errors[-4:]) if exchange_errors else "未返回 token"
-            raise RuntimeError(f"Microsoft passwordless token 换取失败: {detail}")
-        step(index, "Microsoft passwordless token 换取完成")
+            raise RuntimeError(f"passwordless token 换取失败: {detail}")
+        step(index, "passwordless token 换取完成")
         return tokens
 
     def _register_user(self, email: str, password: str, index: int) -> None:
         step(index, "开始提交注册密码")
         url = f"{auth_base}/api/accounts/user/register"
         headers = self._json_headers(f"{auth_base}/create-account/password")
-        headers["openai-sentinel-token"] = build_sentinel_token(self.session, self.device_id, "username_password_create")
+        headers["openai-sentinel-token"] = build_sentinel_token(self.session, self.device_id, "username_password_create", self.fingerprint)
         headers = _headers_with_clearance(headers, url, self.proxy, self.clearance_user_agent)
         resp, error = request_with_local_retry(self.session, "post", url, json={"username": email, "password": password}, headers=headers, verify=False)
         if _is_cloudflare_challenge(resp):
@@ -832,7 +984,7 @@ class PlatformRegistrar:
             if bundle is None:
                 raise RuntimeError(_cloudflare_block_message(resp, reason=self.clearance_failure_reason))
             headers = self._json_headers(f"{auth_base}/create-account/password")
-            headers["openai-sentinel-token"] = build_sentinel_token(self.session, self.device_id, "username_password_create")
+            headers["openai-sentinel-token"] = build_sentinel_token(self.session, self.device_id, "username_password_create", self.fingerprint)
             headers = _headers_with_clearance(headers, url, self.proxy, self.clearance_user_agent)
             resp, error = request_with_local_retry(self.session, "post", url, json={"username": email, "password": password}, headers=headers, verify=False)
             if _is_cloudflare_challenge(resp):
@@ -864,7 +1016,7 @@ class PlatformRegistrar:
 
     def _validate_otp(self, code: str, index: int) -> None:
         step(index, f"开始校验验证码 {code}")
-        resp, error = validate_otp(self.session, self.device_id, code)
+        resp, error = validate_otp(self.session, self.device_id, code, self.fingerprint)
         if resp is None or resp.status_code != 200:
             body = ""
             try:
@@ -878,7 +1030,21 @@ class PlatformRegistrar:
         step(index, "开始创建账号资料")
         url = f"{auth_base}/api/accounts/create_account"
         headers = self._json_headers(f"{auth_base}/about-you")
-        headers["openai-sentinel-token"] = build_sentinel_token(self.session, self.device_id, "oauth_create_account")
+
+        # 使用新的 Sentinel 函数，同时获取 Sentinel Token 和 SO Token
+        fp = _browser_fingerprint(self.fingerprint)
+        sentinel_token, so_token, _oai_sc = build_sentinel_with_so_token(
+            self.session,
+            self.device_id,
+            "oauth_create_account",
+            user_agent=fp["user_agent"],
+            sec_ch_ua=fp["sec_ch_ua"],
+        )
+
+        headers["openai-sentinel-token"] = sentinel_token
+        if so_token:
+            headers["openai-sentinel-so-token"] = so_token
+
         headers = _headers_with_clearance(headers, url, self.proxy, self.clearance_user_agent)
         resp, error = request_with_local_retry(self.session, "post", url, json={"name": name, "birthdate": birthdate}, headers=headers, verify=False)
         if _is_cloudflare_challenge(resp):
@@ -886,7 +1052,21 @@ class PlatformRegistrar:
             if bundle is None:
                 raise RuntimeError(_cloudflare_block_message(resp, reason=self.clearance_failure_reason))
             headers = self._json_headers(f"{auth_base}/about-you")
-            headers["openai-sentinel-token"] = build_sentinel_token(self.session, self.device_id, "oauth_create_account")
+            fp = _browser_fingerprint(self.fingerprint)
+
+            # 重新生成 Sentinel Token 和 SO Token
+            sentinel_token, so_token, _oai_sc = build_sentinel_with_so_token(
+                self.session,
+                self.device_id,
+                "oauth_create_account",
+                user_agent=fp["user_agent"],
+                sec_ch_ua=fp["sec_ch_ua"],
+            )
+
+            headers["openai-sentinel-token"] = sentinel_token
+            if so_token:
+                headers["openai-sentinel-so-token"] = so_token
+
             headers = _headers_with_clearance(headers, url, self.proxy, self.clearance_user_agent)
             resp, error = request_with_local_retry(self.session, "post", url, json={"name": name, "birthdate": birthdate}, headers=headers, verify=False)
             if _is_cloudflare_challenge(resp):
@@ -914,7 +1094,7 @@ class PlatformRegistrar:
         if not self.platform_auth_code:
             raise RuntimeError("token换取失败: 缺少 OAuth callback code")
         exchange_errors: list[str] = []
-        tokens = request_platform_oauth_token(self.session, self.platform_auth_code, self.code_verifier, exchange_errors)
+        tokens = request_platform_oauth_token(self.session, self.platform_auth_code, self.code_verifier, exchange_errors, self.fingerprint)
         if not tokens:
             detail = "；".join(exchange_errors[-3:]) if exchange_errors else "未返回 token"
             raise RuntimeError(f"token换取失败: {detail}")
