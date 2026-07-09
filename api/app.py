@@ -51,6 +51,11 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         _configure_threadpool()
+        try:
+            from services.user_service import user_service
+            user_service.ensure_default_admin()
+        except Exception as exc:
+            logger.warning({"event": "ensure_default_admin_failed", "error": str(exc)})
         stop_event = Event()
         thread = start_limited_account_watcher(stop_event)
         cleanup_thread = start_image_cleanup_scheduler(stop_event)

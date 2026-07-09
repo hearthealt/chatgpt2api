@@ -860,6 +860,44 @@
       </div>
     </PagePanel>
 
+    <PagePanel v-if="localSettings && activeSettingsTab === 'users'" class="space-y-4">
+      <div>
+        <p class="ui-section-title">用户设置</p>
+        <p class="mt-1 text-xs text-muted-foreground">
+          控制是否开放自助注册与新用户的默认额度。用户账户与邀请码请到左侧「用户与邀请」菜单管理。
+        </p>
+      </div>
+
+      <div class="rounded-xl border border-border bg-card p-4">
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <FormField label="开放自助注册">
+            <Checkbox v-model="quotaForm.open_registration">允许用户自助注册</Checkbox>
+          </FormField>
+          <FormField label="注册需要邀请码">
+            <Checkbox v-model="quotaForm.require_invite">开启后注册必须填写有效邀请码</Checkbox>
+          </FormField>
+          <FormField label="统计周期">
+            <select v-model="quotaForm.period" class="ui-input h-10 w-full rounded-md border border-border bg-background px-3">
+              <option value="daily">每日</option>
+              <option value="monthly">每月</option>
+              <option value="total">累计</option>
+            </select>
+          </FormField>
+          <FormField label="默认对话次数（-1 无限）">
+            <Input v-model.number="quotaForm.default_call_limit" type="number" size="md" block />
+          </FormField>
+          <FormField label="默认生图次数（-1 无限）">
+            <Input v-model.number="quotaForm.default_image_limit" type="number" size="md" block />
+          </FormField>
+        </div>
+        <div class="mt-3">
+          <Button size="sm" variant="primary" :disabled="quotaSaving" @click="saveQuotaDefaults">
+            {{ quotaSaving ? '保存中...' : '保存用户设置' }}
+          </Button>
+        </div>
+      </div>
+    </PagePanel>
+
     <PagePanel v-if="localSettings && (activeSettingsTab === 'cpa' || activeSettingsTab === 'sub2api')" class="space-y-4">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -1188,6 +1226,7 @@ import {
 } from '@/api/settings'
 import { parseProxyReference, proxyApi, type ClearanceTestResult, type ProxyRuntimeStatus, type ProxyTestResult } from '@/api/proxy'
 import { userKeysApi, type UserKey } from '@/api/userKeys'
+import { userAccessApi } from '@/api/invites'
 import { getAuthToken } from '@/api/client'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useSettingsStore } from '@/stores/settings'
@@ -1259,6 +1298,15 @@ const userKeyBusy = ref('')
 const userKeyModal = ref<'create' | 'edit' | ''>('')
 const editingUserKey = ref<UserKey | null>(null)
 const newUserKey = ref('')
+const userSettingsLoaded = ref(false)
+const quotaSaving = ref(false)
+const quotaForm = ref({
+  open_registration: true,
+  require_invite: false,
+  period: 'monthly',
+  default_call_limit: 1000,
+  default_image_limit: 200,
+})
 const cpaForm = ref({
   name: '',
   base_url: '',
@@ -1286,6 +1334,7 @@ const settingsTabs = [
   { value: 'storage', label: '图片存储与审核' },
   { value: 'backup', label: 'R2 备份' },
   { value: 'keys', label: '用户密钥' },
+  { value: 'users', label: '用户设置' },
   { value: 'api-docs', label: '接口接入' },
   { value: 'canvas', label: '画布入口' },
   { value: 'cpa', label: 'CPA' },
@@ -1947,6 +1996,44 @@ async function deleteUserKey(item: UserKey) {
   }
 }
 
+function syncQuotaFormFromSettings(raw: any) {
+  quotaForm.value = {
+    open_registration: raw?.open_registration !== false,
+    require_invite: raw?.require_invite === true,
+    period: String(raw?.period || 'monthly'),
+    default_call_limit: Number.isFinite(raw?.default_call_limit) ? raw.default_call_limit : 1000,
+    default_image_limit: Number.isFinite(raw?.default_image_limit) ? raw.default_image_limit : 200,
+  }
+}
+
+async function loadUserSettings() {
+  try {
+    const res = await userAccessApi.get()
+    syncQuotaFormFromSettings(res.settings)
+  } catch (error: any) {
+    toast.error(error?.message || '加载用户设置失败')
+  }
+}
+
+async function saveQuotaDefaults() {
+  quotaSaving.value = true
+  try {
+    const res = await userAccessApi.save({
+      open_registration: quotaForm.value.open_registration,
+      require_invite: quotaForm.value.require_invite,
+      period: quotaForm.value.period,
+      default_call_limit: Number(quotaForm.value.default_call_limit),
+      default_image_limit: Number(quotaForm.value.default_image_limit),
+    })
+    syncQuotaFormFromSettings(res.settings)
+    toast.success('用户设置已保存')
+  } catch (error: any) {
+    toast.error(error.message || '保存用户设置失败')
+  } finally {
+    quotaSaving.value = false
+  }
+}
+
 async function persistSettings(showToast = false) {
   if (!localSettings.value) return null
   const payload = prepareSettingsPatch(localSettings.value, savedSettingsBaseline.value)
@@ -2442,6 +2529,11 @@ async function loadActiveSettingsTabData(force = false) {
     await loadUserKeys()
     return
   }
+  if (tab === 'users' && (force || !userSettingsLoaded.value)) {
+    userSettingsLoaded.value = true
+    await loadUserSettings()
+    return
+  }
   if (tab === 'backup' && (force || !backupsLoaded.value)) {
     await loadBackups()
     return
@@ -2490,6 +2582,11 @@ watch(activeSettingsTab, () => {
 })
 
 const handleSave = async () => {
+  // 「用户设置」是独立面板，用专用保存逻辑，避免误以为顶部按钮没生效
+  if (activeSettingsTab.value === 'users') {
+    await saveQuotaDefaults()
+    return
+  }
   if (!localSettings.value) return
   const confirmed = await confirmDialog.ask({
     title: '确认保存系统设置',

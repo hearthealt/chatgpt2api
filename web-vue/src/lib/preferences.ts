@@ -86,3 +86,42 @@ export function setJsonPreference(key: PreferenceKey, value: unknown): void {
 export function removePreference(key: PreferenceKey): void {
   storage()?.removeItem(key)
 }
+
+// 与登录用户绑定的本地数据（对话、画图会话等）。切换账号或登出时需要清除，避免串号。
+const userScopedPreferenceKeys: PreferenceKey[] = [
+  preferenceKeys.studioConversations,
+  preferenceKeys.studioConversationBadges,
+  preferenceKeys.studioActiveConversationId,
+  preferenceKeys.studioActiveMode,
+  preferenceKeys.imageTaskLocalIds,
+  preferenceKeys.imageTaskConversations,
+  preferenceKeys.imageTaskActiveConversationId,
+]
+
+export function purgeUserScopedPreferences(): void {
+  const store = storage()
+  if (!store) return
+  for (const key of userScopedPreferenceKeys) {
+    store.removeItem(key)
+  }
+}
+
+const LAST_SUBJECT_KEY = 'auth-last-subject-id'
+
+// 若当前登录主体与上次不同，则清除上一个用户的本地会话数据。
+export function reconcileSubjectScopedPreferences(subjectId: string): void {
+  const store = storage()
+  if (!store) return
+  const normalized = String(subjectId || '').trim()
+  const previous = store.getItem(LAST_SUBJECT_KEY) || ''
+  if (normalized && previous && previous !== normalized) {
+    purgeUserScopedPreferences()
+  }
+  if (normalized) {
+    store.setItem(LAST_SUBJECT_KEY, normalized)
+  }
+}
+
+export function clearLastSubject(): void {
+  storage()?.removeItem(LAST_SUBJECT_KEY)
+}

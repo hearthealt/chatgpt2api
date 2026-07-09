@@ -384,16 +384,101 @@ export interface UptimeResponse {
 }
 
 export interface LoginRequest {
-  password: string
+  password?: string
+  username?: string
 }
 
 export interface LoginResponse {
   ok: boolean
   authenticated: boolean
   version: string
+  token?: string
   role?: string
   subject_id?: string
   name?: string
+}
+
+export interface RegisterRequest {
+  username: string
+  password: string
+  invite_code?: string
+}
+
+export interface RegisterResponse {
+  ok: boolean
+  token?: string
+  role?: string
+  subject_id?: string
+  name?: string
+  api_key?: string
+}
+
+export interface QuotaBucket {
+  limit: number
+  used: number
+  remaining: number
+}
+
+export interface QuotaSnapshot {
+  period: string
+  calls: QuotaBucket
+  images: QuotaBucket
+}
+
+export interface MeResponse {
+  user: {
+    id: string
+    username: string
+    role: string
+    enabled: boolean
+    created_at?: string
+    last_login_at?: string | null
+    quota: { call_limit: number; image_limit: number; period: string }
+  }
+  quota: QuotaSnapshot
+  api_keys: Array<{ id: string; name: string; enabled: boolean; created_at?: string; last_used_at?: string | null }>
+}
+
+export interface UsageHistoryItem {
+  id: string
+  time?: string
+  endpoint?: string
+  model?: string
+  status: string
+  summary?: string
+}
+
+export interface MyUsageResponse {
+  quota: QuotaSnapshot
+  history: UsageHistoryItem[]
+}
+
+export interface MyGalleryItem {
+  task_id: string
+  url: string
+  path: string
+  model?: string
+  mode?: string
+  size?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface MyGalleryResponse {
+  items: MyGalleryItem[]
+  total: number
+}
+
+export interface AdminUser {
+  id: string
+  username: string
+  role: string
+  enabled: boolean
+  created_at?: string
+  last_login_at?: string | null
+  quota: { call_limit: number; image_limit: number; period: string }
+  effective_quota?: { call_limit: number; image_limit: number }
+  usage?: { calls: number; images: number }
 }
 
 export interface AuthStatusResponse {

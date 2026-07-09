@@ -19,25 +19,27 @@
 
       <div class="media-topline">
         <Checkbox
+          v-if="!hideSelect"
           :model-value="selected"
           @click.stop
           @update:model-value="(checked) => $emit('select', file, Boolean(checked))"
         />
+        <span v-else></span>
         <span v-if="file.expired" class="media-badge danger">已过期</span>
-        <span v-else class="media-badge">{{ storageLabel }}</span>
+        <span v-else-if="storageLabel" class="media-badge">{{ storageLabel }}</span>
       </div>
 
       <div class="media-overlay">
         <button class="overlay-btn" title="复制链接" @click.stop="$emit('copy', file)">
           <Icon :icon="copied ? 'lucide:check' : 'lucide:copy'" />
         </button>
-        <button class="overlay-btn" title="编辑标签" @click.stop="$emit('edit-tags', file)">
+        <button v-if="!hideTags" class="overlay-btn" title="编辑标签" @click.stop="$emit('edit-tags', file)">
           <Icon icon="lucide:tag" />
         </button>
         <button class="overlay-btn" title="下载" @click.stop="$emit('download', file)">
           <Icon icon="lucide:download" />
         </button>
-        <button class="overlay-btn danger" title="删除" @click.stop="$emit('delete', file)">
+        <button v-if="!hideDelete" class="overlay-btn danger" title="删除" @click.stop="$emit('delete', file)">
           <Icon icon="lucide:trash-2" />
         </button>
       </div>
@@ -48,6 +50,9 @@
       <div class="file-meta">
         <span>{{ sizeLabel }}</span>
         <span v-if="dimensions">{{ dimensions }}</span>
+        <span v-if="file.owner" class="file-owner" :title="'生成者：' + file.owner">
+          <Icon icon="lucide:user" class="owner-icon" />{{ file.owner }}
+        </span>
         <Tooltip
           v-if="file.expires_in_seconds !== null && !file.expired && timeRemaining"
           :text="'将在 ' + timeRemaining + ' 后自动删除'"
@@ -55,7 +60,7 @@
           <span class="file-countdown">{{ timeRemaining }}</span>
         </Tooltip>
       </div>
-      <div v-if="file.tags.length" class="tag-row">
+      <div v-if="!hideTags && file.tags.length" class="tag-row">
         <button
           v-for="tag in file.tags"
           :key="`${file.path}-${tag}`"
@@ -85,6 +90,9 @@ defineProps<{
   sizeLabel: string
   dimensions: string
   timeRemaining: string
+  hideSelect?: boolean
+  hideTags?: boolean
+  hideDelete?: boolean
 }>()
 
 defineEmits<{
@@ -283,6 +291,24 @@ defineEmits<{
   color: hsl(25 95% 53%);
   font-weight: 500;
   cursor: help;
+}
+
+.file-owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: hsl(var(--primary));
+  font-weight: 500;
+}
+
+.owner-icon {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
 }
 
 .tag-row {

@@ -29,15 +29,47 @@ from services.image_storage_service import ImageStorageError, image_storage_serv
 from services.image_tags_service import delete_tag, get_all_tags, set_tags
 from services.dashboard_metrics_service import dashboard_metrics_service
 from services.log_service import LOG_TYPE_CALL, log_service
+from services.auth_service import auth_service
+from services.invite_service import invite_service
 from services.model_catalog_service import get_model_catalog
 from services.proxy_service import proxy_settings, test_clearance, test_proxy
+from services.quota_service import (
+    current_usage,
+    default_quota_for_new_user,
+    invalidate_usage_cache,
+    quota_snapshot,
+)
 from services.realtime_monitor_service import realtime_monitor_service
 from services.runtime_log_service import list_runtime_logs
+from services.session_token import issue_token
+from services.user_service import user_service
+from services.image_task_service import image_task_service
+from services.conversation_store import conversation_store
 from utils.timezone import beijing_now, parse_to_beijing_naive
 
 
 class SettingsUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
+
+
+class LoginRequest(BaseModel):
+    username: str = ""
+    password: str = ""
+
+
+class RegisterRequest(BaseModel):
+    username: str = ""
+    password: str = ""
+    invite_code: str = ""
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str = ""
+    new_password: str = ""
+
+
+class ConversationsSaveRequest(BaseModel):
+    conversations: list[dict[str, Any]] = Field(default_factory=list)
 
 
 SETTINGS_UPDATE_KEYS = {
@@ -70,6 +102,7 @@ SETTINGS_UPDATE_KEYS = {
     "public_display",
     "image_generation",
     "quota_limits",
+    "user_access",
     "runtime_capacity",
     "image_storage",
     "backup",
@@ -604,7 +637,25 @@ def create_router(app_version: str) -> APIRouter:
     router = APIRouter()
 
     @router.post("/auth/login")
-    async def login(authorization: str | None = Header(default=None)):
+    async def login(body: LoginRequest | None = None, authorization: str | None = Header(default=None)):
+        # 用户名+密码登录：签发会话令牌
+        username = (body.username if body else "").strip()
+        password = (body.password if body else "")
+        if username and password:
+            user = user_service.authenticate_password(username, password)
+            if user is None:
+                raise HTTPException(status_code=401, detail={"error": "用户名或密码不正确，或账号已被禁用"})
+            token = issue_token(user)
+            return {
+                "ok": True,
+                "authenticated": True,
+                "version": app_version,
+                "token": token,
+                "role": user.get("role"),
+                "subject_id": user.get("id"),
+                "name": user.get("username"),
+            }
+        # 兼容：直接使用管理员密钥 / API key 登录（Authorization 头）
         identity = require_identity(authorization)
         return {
             "ok": True,
@@ -613,6 +664,54 @@ def create_router(app_version: str) -> APIRouter:
             "role": identity.get("role"),
             "subject_id": identity.get("id"),
             "name": identity.get("name"),
+        }
+
+    @router.post("/auth/register")
+    async def register(body: RegisterRequest):
+        quota_settings = config.get_user_access_settings()
+        if not bool(quota_settings.get("open_registration", True)):
+            raise HTTPException(status_code=403, detail={"error": "当前未开放自助注册，请联系管理员开通账号"})
+        require_invite = bool(quota_settings.get("require_invite", False))
+        invite_input = body.invite_code.strip()
+        if require_invite:
+            if not invite_input:
+                raise HTTPException(status_code=400, detail={"error": "注册需要邀请码"})
+            # 先校验（不消费），避免用户名重复/密码不合法时白白浪费邀请码
+            if not invite_service.validate(invite_input):
+                raise HTTPException(status_code=403, detail={"error": "邀请码无效、已停用或已用尽"})
+        try:
+            user = user_service.create_user(
+                body.username, body.password, role="user", quota=default_quota_for_new_user()
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        # 用户创建成功后再消费邀请码
+        if require_invite:
+            invite_service.consume(invite_input)
+        # 为新用户创建一把默认 API key，归属到该用户
+        api_key = ""
+        try:
+            _, api_key = auth_service.create_key(role="user", name=user["username"], owner_user_id=user["id"])
+        except ValueError:
+            api_key = ""
+        full_user = user_service.get_user(user["id"]) or user
+        token = issue_token(full_user)
+        return {
+            "ok": True,
+            "token": token,
+            "role": user.get("role"),
+            "subject_id": user.get("id"),
+            "name": user.get("username"),
+            "api_key": api_key,
+        }
+
+    @router.get("/auth/register-info")
+    async def register_info():
+        """公开：登录/注册页据此判断是否开放注册、是否需要邀请码。"""
+        quota_settings = config.get_user_access_settings()
+        return {
+            "open_registration": bool(quota_settings.get("open_registration", True)),
+            "require_invite": bool(quota_settings.get("require_invite", False)),
         }
 
     @router.get("/auth/status")
@@ -640,6 +739,129 @@ def create_router(app_version: str) -> APIRouter:
             "version": app_version,
             "changelog_url": "https://github.com/hearthealt/chatgpt2api/blob/main/CHANGELOG.md"
         }
+
+    def _resolve_me(authorization: str | None) -> dict[str, Any]:
+        identity = require_identity(authorization)
+        user = user_service.get_user(str(identity.get("id") or ""))
+        if user is None:
+            raise HTTPException(status_code=404, detail={"error": "当前登录身份不是用户账户"})
+        return user
+
+    @router.get("/api/me")
+    async def get_me(authorization: str | None = Header(default=None)):
+        user = await run_in_threadpool(_resolve_me, authorization)
+        keys = auth_service.list_owner_keys(str(user.get("id") or ""))
+        return {
+            "user": user_service.public_user(user),
+            "quota": await run_in_threadpool(quota_snapshot, user),
+            "api_keys": keys,
+        }
+
+    @router.get("/api/me/usage")
+    async def get_my_usage(
+        limit: int = Query(default=50, ge=1, le=500),
+        authorization: str | None = Header(default=None),
+    ):
+        user = await run_in_threadpool(_resolve_me, authorization)
+        snapshot = await run_in_threadpool(quota_snapshot, user)
+        from services.quota_service import owner_key_ids
+
+        key_ids = await run_in_threadpool(owner_key_ids, user)
+        raw_logs = await run_in_threadpool(log_service.list, LOG_TYPE_CALL, "", "", 2000)
+        history: list[dict[str, Any]] = []
+        for item in raw_logs:
+            detail = item.get("detail") if isinstance(item.get("detail"), dict) else {}
+            key_id = _clean_text(detail.get("key_id") or item.get("key_id"))
+            if key_id not in key_ids:
+                continue
+            status = _clean_text(_detail_value(item, "status", item.get("status"))).lower()
+            failed = status in {"failed", "error", "fail"} or bool(_detail_value(item, "error"))
+            history.append({
+                "id": item.get("id"),
+                "time": item.get("time") or _detail_value(item, "started_at"),
+                "endpoint": _detail_value(item, "endpoint"),
+                "model": _detail_value(item, "model"),
+                "status": "error" if failed else "success",
+                "summary": item.get("summary"),
+            })
+            if len(history) >= limit:
+                break
+        return {"quota": snapshot, "history": history}
+
+    @router.get("/api/me/gallery")
+    async def get_my_gallery(
+        request: Request,
+        start_date: str = "",
+        end_date: str = "",
+        limit: int = Query(default=0, ge=0, le=500),
+        offset: int = Query(default=0, ge=0),
+        media_type: str = Query(default="all"),
+        search: str = Query(default=""),
+        authorization: str | None = Header(default=None),
+    ):
+        identity = require_identity(authorization)
+        owned_paths = await run_in_threadpool(image_task_service.list_owner_image_paths, identity)
+        if not owned_paths:
+            return {
+                "items": [], "groups": [], "total": 0, "total_size": 0,
+                "counts": {"all": 0, "image": 0, "video": 0, "music": 0},
+                "media_type": media_type, "page": 1, "page_size": limit or 0, "page_count": 0,
+            }
+        return await run_in_threadpool(
+            list_images,
+            resolve_image_base_url(request),
+            start_date=start_date.strip(),
+            end_date=end_date.strip(),
+            limit=limit,
+            offset=offset,
+            media_type=media_type,
+            search=search.strip(),
+            only_paths=owned_paths,
+        )
+
+    @router.get("/api/me/conversations")
+    async def get_my_conversations(authorization: str | None = Header(default=None)):
+        identity = require_identity(authorization)
+        items = await run_in_threadpool(conversation_store.get, identity)
+        return {"conversations": items}
+
+    @router.put("/api/me/conversations")
+    async def save_my_conversations(body: ConversationsSaveRequest, authorization: str | None = Header(default=None)):
+        identity = require_identity(authorization)
+        items = await run_in_threadpool(conversation_store.replace, identity, body.conversations)
+        return {"ok": True, "count": len(items)}
+
+    @router.post("/api/me/password")
+    async def change_my_password(body: ChangePasswordRequest, authorization: str | None = Header(default=None)):
+        user = await run_in_threadpool(_resolve_me, authorization)
+        try:
+            updated = await run_in_threadpool(
+                user_service.verify_and_change_password,
+                user["id"],
+                body.old_password,
+                body.new_password,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        if updated is None:
+            raise HTTPException(status_code=404, detail={"error": "用户不存在"})
+        invalidate_usage_cache(user["id"])
+        # 返回新令牌，让当前会话不掉线
+        return {"ok": True, "token": issue_token(updated)}
+
+    @router.post("/api/me/api-key")
+    async def regenerate_my_api_key(authorization: str | None = Header(default=None)):
+        """重新生成当前用户的调用密钥：删除旧的、创建一把新的，一次性返回原始密钥。"""
+        user = await run_in_threadpool(_resolve_me, authorization)
+        await run_in_threadpool(auth_service.delete_owner_keys, user["id"])
+        try:
+            _, raw_key = await run_in_threadpool(
+                auth_service.create_key, role="user", name=str(user.get("username") or ""), owner_user_id=user["id"]
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        keys = auth_service.list_owner_keys(str(user.get("id") or ""))
+        return {"ok": True, "key": raw_key, "api_keys": keys}
 
     @router.get("/public/stats")
     async def public_stats():
@@ -825,6 +1047,7 @@ def create_router(app_version: str) -> APIRouter:
             media_type=media_type,
             tag=tag.strip(),
             search=search.strip(),
+            with_owner=True,
         )
 
     @router.get("/images/{image_path:path}", include_in_schema=False)

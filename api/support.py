@@ -8,6 +8,8 @@ from fastapi import HTTPException, Request
 from services.account_service import account_service
 from services.auth_service import auth_service
 from services.config import config
+from services.session_token import verify_token
+from services.user_service import user_service
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 WEB_DIST_DIR = BASE_DIR / "web_dist"
@@ -27,12 +29,62 @@ def _legacy_admin_identity(token: str) -> dict[str, object] | None:
     return None
 
 
+def _session_identity(token: str) -> dict[str, object] | None:
+    """校验 Web 会话令牌（sess.xxx）并映射为 identity。"""
+    payload = verify_token(token)
+    if not payload:
+        return None
+    user_id = str(payload.get("uid") or "").strip()
+    if not user_id:
+        return None
+    user = user_service.get_user(user_id)
+    if not user or not bool(user.get("enabled", True)):
+        return None
+    try:
+        current_pv = int(user.get("password_version") or 1)
+        token_pv = int(payload.get("pv") or 0)
+    except (TypeError, ValueError):
+        return None
+    if token_pv != current_pv:
+        return None
+    return {
+        "id": str(user.get("id") or ""),
+        "name": str(user.get("username") or ""),
+        "role": str(user.get("role") or "user"),
+    }
+
+
+def _key_owner_enabled(identity: dict[str, object] | None) -> bool:
+    """API key 归属用户若被禁用，则其密钥也应失效。"""
+    if identity is None:
+        return False
+    owner_user_id = str(identity.get("owner_user_id") or "").strip()
+    if not owner_user_id:
+        return True  # 无归属（历史密钥）不受影响
+    user = user_service.get_user(owner_user_id)
+    if user is None:
+        return True  # 归属用户已删除，密钥应已被连带删除；这里放行不影响
+    return bool(user.get("enabled", True))
+
+
 def require_identity(authorization: str | None) -> dict[str, object]:
     token = extract_bearer_token(authorization)
-    identity = _legacy_admin_identity(token) or auth_service.authenticate(token)
-    if identity is None:
+    if not token:
         raise HTTPException(status_code=401, detail={"error": "密钥无效或已失效，请重新登录"})
-    return identity
+    legacy = _legacy_admin_identity(token)
+    if legacy is not None:
+        return legacy
+    session_identity = _session_identity(token)
+    if session_identity is not None:
+        return session_identity
+    key_identity = auth_service.authenticate(token)
+    if key_identity is not None and _key_owner_enabled(key_identity):
+        return {
+            "id": key_identity.get("id"),
+            "name": key_identity.get("name"),
+            "role": key_identity.get("role"),
+        }
+    raise HTTPException(status_code=401, detail={"error": "密钥无效或已失效，请重新登录"})
 
 
 def require_auth_key(authorization: str | None) -> None:

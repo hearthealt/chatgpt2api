@@ -22,6 +22,7 @@ class GitStorageBackend(StorageBackend):
         branch: str = "main",
         file_path: str = "accounts.json",
         auth_keys_file_path: str = "auth_keys.json",
+        users_file_path: str = "users.json",
         local_cache_dir: Path | None = None,
     ):
         self.repo_url = repo_url
@@ -29,6 +30,7 @@ class GitStorageBackend(StorageBackend):
         self.branch = branch
         self.file_path = file_path
         self.auth_keys_file_path = auth_keys_file_path
+        self.users_file_path = users_file_path
         
         # 本地缓存目录
         if local_cache_dir is None:
@@ -113,6 +115,25 @@ class GitStorageBackend(StorageBackend):
         """保存鉴权密钥数据到 Git 仓库"""
         try:
             self._save_json_file(self.auth_keys_file_path, {"items": auth_keys}, "Update auth keys data")
+        except Exception as e:
+            print(f"[git-storage] save failed: {e}")
+            raise e
+
+    def load_users(self) -> list[dict[str, Any]]:
+        """从 Git 仓库加载用户账户数据"""
+        try:
+            data = self._load_json_value(self.users_file_path)
+            if isinstance(data, dict):
+                data = data.get("items")
+            return data if isinstance(data, list) else []
+        except Exception as e:
+            print(f"[git-storage] load failed: {e}")
+            raise
+
+    def save_users(self, users: list[dict[str, Any]]) -> None:
+        """保存用户账户数据到 Git 仓库"""
+        try:
+            self._save_json_file(self.users_file_path, {"items": users}, "Update users data")
         except Exception as e:
             print(f"[git-storage] save failed: {e}")
             raise e

@@ -20,6 +20,11 @@
       />
     </section>
 
+    <section class="space-y-3">
+      <h3 class="text-sm font-semibold text-muted-foreground">用户概览</h3>
+      <UserOverviewSection />
+    </section>
+
     <section class="grid grid-cols-1 gap-4">
       <ChartCard title="模型请求分布">
         <template #actions>
@@ -77,6 +82,7 @@
 import { ChartCard, StatCard } from 'nanocat-ui'
 import PageLoadingState from '@/components/ai/PageLoadingState.vue'
 import TimeRangeTabs from '@/components/ai/TimeRangeTabs.vue'
+import UserOverviewSection from './dashboard/UserOverviewSection.vue'
 import { useDashboardPage } from './dashboard/useDashboardPage'
 
 defineOptions({ name: 'Dashboard' })

@@ -10,6 +10,7 @@ from api.support import require_identity, resolve_image_base_url
 from services.content_filter import check_request, request_shape, request_text
 from services.editable_file_task_service import editable_file_task_service
 from services.log_service import LoggedCall
+from services.quota_service import check_quota
 from services.protocol import (
     anthropic_v1_messages,
     openai_v1_chat_complete,
@@ -97,6 +98,7 @@ def create_router() -> APIRouter:
             authorization: str | None = Header(default=None),
     ):
         identity = require_identity(authorization)
+        await run_in_threadpool(check_quota, identity, kind="image")
         payload = body.model_dump(mode="python")
         payload["base_url"] = resolve_image_base_url(request)
         call = LoggedCall(identity, "/v1/images/generations", body.model, "文生图", request_text=body.prompt)
@@ -110,6 +112,7 @@ def create_router() -> APIRouter:
             authorization: str | None = Header(default=None),
     ):
         identity = require_identity(authorization)
+        await run_in_threadpool(check_quota, identity, kind="image")
         payload, image_sources, mask_sources = await parse_image_edit_request(request)
         prompt = str(payload["prompt"])
         model = str(payload["model"])
@@ -130,6 +133,7 @@ def create_router() -> APIRouter:
         model = str(payload.get("model") or "auto")
         request_preview = request_text(payload.get("prompt"), payload.get("messages"))
         image_chat = is_image_chat_request(payload)
+        await run_in_threadpool(check_quota, identity, kind="image" if image_chat else "call")
         call = LoggedCall(
             identity,
             "/v1/chat/completions",
@@ -145,6 +149,7 @@ def create_router() -> APIRouter:
     @router.post("/v1/responses")
     async def create_response(body: ResponseCreateRequest, authorization: str | None = Header(default=None)):
         identity = require_identity(authorization)
+        await run_in_threadpool(check_quota, identity, kind="call")
         payload = body.model_dump(mode="python")
         model = str(payload.get("model") or "auto")
         request_preview = request_text(payload.get("input"), payload.get("instructions"))
@@ -168,6 +173,7 @@ def create_router() -> APIRouter:
             anthropic_version: str | None = Header(default=None, alias="anthropic-version"),
     ):
         identity = require_identity(authorization or (f"Bearer {x_api_key}" if x_api_key else None))
+        await run_in_threadpool(check_quota, identity, kind="call")
         payload = body.model_dump(mode="python")
         model = str(payload.get("model") or "auto")
         request_preview = request_text(payload.get("system"), payload.get("messages"), payload.get("tools"))
@@ -178,6 +184,7 @@ def create_router() -> APIRouter:
     @router.post("/v1/search")
     async def search(body: SearchRequest, authorization: str | None = Header(default=None)):
         identity = require_identity(authorization)
+        await run_in_threadpool(check_quota, identity, kind="call")
         call = LoggedCall(identity, "/v1/search", openai_search.MODEL, "搜索", request_text=body.prompt)
         await filter_or_log(call, body.prompt)
         return await call.run(openai_search.handle, body.model_dump(mode="python"))

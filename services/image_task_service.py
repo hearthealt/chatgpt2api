@@ -248,6 +248,40 @@ class ImageTaskService:
                 missing_ids = []
             return {"items": items, "missing_ids": missing_ids}
 
+    def count_active_images(self, identity: dict[str, object]) -> int:
+        """当前用户名下在途（排队/运行中）的图片任务数。"""
+        owner = _owner_id(identity)
+        with self._lock:
+            return sum(
+                1
+                for task in self._tasks.values()
+                if task.get("owner_id") == owner and task.get("status") in UNFINISHED_STATUSES
+            )
+
+    def list_owner_image_paths(self, identity: dict[str, object]) -> set[str]:
+        """当前用户名下所有成功任务产出的图片相对路径集合（用于「我的图库」过滤）。"""
+        owner = _owner_id(identity)
+        deleted = deleted_image_paths()
+        paths: set[str] = set()
+        with self._lock:
+            changed = self._mark_deleted_images_locked(deleted)
+            if changed:
+                self._save_locked()
+            for task in self._tasks.values():
+                if task.get("owner_id") != owner or task.get("status") != TASK_STATUS_SUCCESS:
+                    continue
+                data = task.get("data")
+                if not isinstance(data, list):
+                    continue
+                for asset in data:
+                    if not isinstance(asset, dict):
+                        continue
+                    for ref in (asset.get("path"), asset.get("url")):
+                        rel = image_rel_from_url(ref) if ref else ""
+                        if rel:
+                            paths.add(rel)
+        return paths
+
     def _mark_deleted_images_locked(self, deleted: set[str]) -> int:
         changed = 0
         for task in self._tasks.values():

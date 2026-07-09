@@ -15,6 +15,9 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from services.auth_service import auth_service
+from services.user_service import user_service
+from services.invite_service import invite_service
+from services.quota_service import build_user_stats, current_usage, default_quota_for_new_user, effective_limits, invalidate_usage_cache
 
 from api.support import (
     require_admin,
@@ -38,6 +41,48 @@ from services.sub2api_service import (
 
 class UserKeyCreateRequest(BaseModel):
     name: str = ""
+
+
+class AdminUserQuota(BaseModel):
+    call_limit: int | None = None
+    image_limit: int | None = None
+    period: str | None = None
+
+
+class AdminUserCreateRequest(BaseModel):
+    username: str = ""
+    password: str = ""
+    role: str = "user"
+    quota: AdminUserQuota | None = None
+
+
+class AdminUserUpdateRequest(BaseModel):
+    username: str | None = None
+    enabled: bool | None = None
+    role: str | None = None
+    quota: AdminUserQuota | None = None
+
+
+class AdminUserPasswordRequest(BaseModel):
+    new_password: str = ""
+
+
+class InviteGenerateRequest(BaseModel):
+    count: int = 1
+    max_uses: int = 1
+    note: str = ""
+
+
+class InviteToggleRequest(BaseModel):
+    enabled: bool = True
+
+
+class UserAccessRequest(BaseModel):
+    open_registration: bool | None = None
+    require_invite: bool | None = None
+    period: str | None = None
+    default_call_limit: int | None = None
+    default_image_limit: int | None = None
 
 
 class UserKeyUpdateRequest(BaseModel):
@@ -425,6 +470,136 @@ def create_router() -> APIRouter:
         if not auth_service.delete_key(key_id, role="user"):
             raise HTTPException(status_code=404, detail={"error": "这条用户密钥不存在，可能已经被删除"})
         return {"items": auth_service.list_keys(role="user")}
+
+    def _admin_user_payload(user: dict[str, Any]) -> dict[str, Any]:
+        full = user_service.get_user(str(user.get("id") or "")) or user
+        usage = current_usage(full)
+        item = user_service.public_user(full)
+        item["usage"] = usage
+        item["effective_quota"] = effective_limits(full)
+        return item
+
+    def _admin_users_list() -> list[dict[str, Any]]:
+        return [_admin_user_payload(user) for user in user_service.list_users()]
+
+    @router.get("/api/admin/users")
+    async def admin_list_users(authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        return {"items": _admin_users_list()}
+
+    @router.get("/api/admin/user-stats")
+    async def admin_user_stats(authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        return await run_in_threadpool(build_user_stats)
+
+    @router.post("/api/admin/users")
+    async def admin_create_user(body: AdminUserCreateRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        quota = body.quota.model_dump(exclude_none=True) if body.quota else default_quota_for_new_user()
+        try:
+            user = user_service.create_user(body.username, body.password, role=body.role or "user", quota=quota)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        # 为该用户创建一把默认 API key
+        api_key = ""
+        try:
+            _, api_key = auth_service.create_key(role="user", name=user["username"], owner_user_id=user["id"])
+        except ValueError:
+            api_key = ""
+        return {"item": _admin_user_payload(user), "api_key": api_key, "items": _admin_users_list()}
+
+    @router.post("/api/admin/users/{user_id}")
+    async def admin_update_user(user_id: str, body: AdminUserUpdateRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        updates: dict[str, Any] = {}
+        if body.username is not None:
+            updates["username"] = body.username
+        if body.enabled is not None:
+            updates["enabled"] = body.enabled
+        if body.role is not None:
+            updates["role"] = body.role
+        if body.quota is not None:
+            updates["quota"] = body.quota.model_dump(exclude_none=True)
+        if not updates:
+            raise HTTPException(status_code=400, detail={"error": "还没有检测到改动，请修改后再保存"})
+        # 防止把最后一个启用的管理员禁用或降级为普通用户，导致无人能管理
+        disabling = updates.get("enabled") is False
+        demoting = "role" in updates and str(updates.get("role")).lower() != "admin"
+        if (disabling or demoting) and user_service.is_last_enabled_admin(user_id):
+            raise HTTPException(status_code=400, detail={"error": "不能禁用或降级最后一个管理员账号"})
+        try:
+            user = user_service.update_user(user_id, updates)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        if user is None:
+            raise HTTPException(status_code=404, detail={"error": "用户不存在，可能已被删除"})
+        invalidate_usage_cache(user_id)
+        return {"item": _admin_user_payload(user), "items": _admin_users_list()}
+
+    @router.post("/api/admin/users/{user_id}/password")
+    async def admin_reset_password(user_id: str, body: AdminUserPasswordRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        try:
+            user = user_service.set_password(user_id, body.new_password)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        if user is None:
+            raise HTTPException(status_code=404, detail={"error": "用户不存在，可能已被删除"})
+        return {"ok": True, "item": _admin_user_payload(user)}
+
+    @router.delete("/api/admin/users/{user_id}")
+    async def admin_delete_user(user_id: str, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        if user_service.is_last_enabled_admin(user_id):
+            raise HTTPException(status_code=400, detail={"error": "不能删除最后一个管理员账号"})
+        if not user_service.delete_user(user_id):
+            raise HTTPException(status_code=404, detail={"error": "用户不存在，可能已被删除"})
+        # 同时删除其名下 API key，避免悬空
+        auth_service.delete_owner_keys(user_id)
+        invalidate_usage_cache(user_id)
+        return {"ok": True, "items": _admin_users_list()}
+
+    @router.get("/api/admin/invites")
+    async def admin_list_invites(authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        return {"items": invite_service.list_codes()}
+
+    @router.post("/api/admin/invites")
+    async def admin_generate_invites(body: InviteGenerateRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        created = invite_service.generate(count=body.count, max_uses=body.max_uses, note=body.note)
+        return {"created": created, "items": invite_service.list_codes()}
+
+    @router.post("/api/admin/invites/{code}/toggle")
+    async def admin_toggle_invite(code: str, body: InviteToggleRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        if not invite_service.set_enabled(code, body.enabled):
+            raise HTTPException(status_code=404, detail={"error": "邀请码不存在"})
+        return {"ok": True, "items": invite_service.list_codes()}
+
+    @router.delete("/api/admin/invites/{code}")
+    async def admin_delete_invite(code: str, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        if not invite_service.delete(code):
+            raise HTTPException(status_code=404, detail={"error": "邀请码不存在"})
+        return {"ok": True, "items": invite_service.list_codes()}
+
+    @router.get("/api/admin/user-access")
+    async def admin_get_user_access(authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        return {"settings": config.get_user_access_settings()}
+
+    @router.post("/api/admin/user-access")
+    async def admin_save_user_access(body: UserAccessRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        updates = {key: value for key, value in body.model_dump().items() if value is not None}
+        current = dict(config.get_user_access_settings())
+        current.update(updates)
+        try:
+            config.update({"user_access": current})
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail={"error": str(exc)}) from exc
+        return {"settings": config.get_user_access_settings()}
 
     @router.get("/api/accounts")
     async def get_accounts(

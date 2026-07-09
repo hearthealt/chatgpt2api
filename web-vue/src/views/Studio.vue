@@ -140,6 +140,7 @@ import { Icon } from '@iconify/vue'
 import { Button } from 'nanocat-ui'
 import { computed, defineAsyncComponent, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { imageTasksApi } from '@/api/imageTasks'
+import { accountApi } from '@/api/account'
 import { streamChatCompletion } from '@/api/chatStream'
 import { debugApi, type DebugChatMessage, type DebugSearchImageGroup, type DebugSearchResult, type DebugSearchSource } from '@/api/debug'
 import {
@@ -231,6 +232,8 @@ let streamController: AbortController | null = null
 let sidebarResizeStartX = 0
 let sidebarResizeStartWidth = defaultSidebarWidth
 let conversationsPersistTimer: number | null = null
+let remoteConversationsSaveTimer: number | null = null
+let remoteConversationsReady = false
 let conversationNoticesPersistTimer: number | null = null
 let activeConversationPersistTimer: number | null = null
 let imageRefreshTimer: number | null = null
@@ -507,15 +510,65 @@ function normalizeMessageStatus(value: unknown): StudioMessageStatus | undefined
   return undefined
 }
 
-function persistConversations() {
-  const payload = conversations.value.slice(0, 80).map((conversation) => ({
+function buildConversationsPayload() {
+  return conversations.value.slice(0, 80).map((conversation) => ({
     ...conversation,
     messages: conversation.messages.slice(-160).map((message) => ({
       ...message,
       status: message.status === 'streaming' || message.status === 'sending' ? 'done' : message.status,
     })),
   }))
+}
+
+function persistConversations() {
+  const payload = buildConversationsPayload()
   setJsonPreference(preferenceKeys.studioConversations, payload)
+  scheduleRemoteConversationSync()
+}
+
+function scheduleRemoteConversationSync() {
+  if (!remoteConversationsReady) return
+  if (remoteConversationsSaveTimer !== null) return
+  remoteConversationsSaveTimer = window.setTimeout(() => {
+    remoteConversationsSaveTimer = null
+    void flushRemoteConversationSync()
+  }, 1500)
+}
+
+async function flushRemoteConversationSync() {
+  if (!remoteConversationsReady) return
+  try {
+    await accountApi.saveConversations(buildConversationsPayload())
+  } catch {
+    // 网络异常时忽略，本地已缓存，下次变更会重试
+  }
+}
+
+// 登录后从服务端加载历史，使其跨浏览器/重新登录后可访问；
+// 若服务端为空但本地有历史，则把本地历史迁移上云。
+async function loadRemoteConversations() {
+  try {
+    const res = await accountApi.getConversations()
+    const remote = Array.isArray(res.conversations) ? res.conversations : []
+    if (remote.length) {
+      const normalized = remote
+        .map(normalizeConversation)
+        .filter((item): item is StudioConversation => Boolean(item))
+        .slice(0, 80)
+      conversations.value = normalized
+      if (!conversations.value.some((item) => item.id === activeConversationId.value)) {
+        activeConversationId.value = conversations.value[0]?.id || ''
+      }
+      setJsonPreference(preferenceKeys.studioConversations, buildConversationsPayload())
+    } else if (conversations.value.length) {
+      // 服务端无记录：把当前本地历史迁移到服务端
+      await accountApi.saveConversations(buildConversationsPayload())
+    }
+  } catch {
+    // 加载失败时沿用本地缓存
+  } finally {
+    remoteConversationsReady = true
+  }
 }
 
 function schedulePersistConversations() {
@@ -1468,6 +1521,7 @@ function initializeStudio() {
     void settingsStore.loadSettings()
   }
   void loadModelCatalog()
+  void loadRemoteConversations()
   void refreshImageTasks()
   scheduleScrollToBottom()
 }
@@ -1487,6 +1541,11 @@ function deactivateStudio() {
   if (conversationsPersistTimer !== null) flushPersistConversations()
   if (conversationNoticesPersistTimer !== null) flushPersistConversationNotices()
   if (activeConversationPersistTimer !== null) flushPersistActiveConversationId()
+  if (remoteConversationsSaveTimer !== null) {
+    window.clearTimeout(remoteConversationsSaveTimer)
+    remoteConversationsSaveTimer = null
+    void flushRemoteConversationSync()
+  }
 }
 
 function disposeStudio() {

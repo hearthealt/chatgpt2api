@@ -20,6 +20,7 @@ export interface GalleryFile {
   webdav: boolean
   width: number | null
   height: number | null
+  owner?: string
 }
 
 export interface GalleryResponse {
@@ -222,6 +223,7 @@ function mapFile(item: BackendImageItem, retentionDays: number): GalleryFile {
     webdav: Boolean(item.webdav ?? false),
     width: Number.isFinite(Number(item.width)) ? Number(item.width) : null,
     height: Number.isFinite(Number(item.height)) ? Number(item.height) : null,
+    owner: cleanString((item as { owner?: unknown }).owner) || undefined,
   }
 }
 
@@ -272,6 +274,7 @@ async function getRetentionDays() {
 type GalleryListParams = GalleryParams & {
   limit?: number
   offset?: number
+  endpoint?: string
 }
 
 async function listMappedFiles(params?: GalleryListParams) {
@@ -284,7 +287,8 @@ async function listMappedFiles(params?: GalleryListParams) {
   if (params?.limit !== undefined && Number.isFinite(params.limit)) requestParams.limit = Number(params.limit)
   if (params?.offset !== undefined && Number.isFinite(params.offset)) requestParams.offset = Number(params.offset)
 
-  const images = await apiClient.get<never, BackendImagesResponse>('/api/images', { params: requestParams })
+  const endpoint = params?.endpoint || '/api/images'
+  const images = await apiClient.get<never, BackendImagesResponse>(endpoint, { params: requestParams })
   const responseRetentionDays = Number(images.retention_days)
   const retentionDays = Number.isFinite(responseRetentionDays) && responseRetentionDays >= 1
     ? Math.floor(responseRetentionDays)
@@ -352,6 +356,40 @@ export const galleryApi = {
       page: page.page,
       page_size: page.pageSize,
       page_count: page.pageCount,
+    }
+  },
+
+  getMine: async (params?: GalleryParams): Promise<GalleryResponse> => {
+    const mediaType = params?.media_type || 'all'
+    const search = cleanString(params?.search)
+    const pageSize = Math.min(Math.max(Number(params?.page_size || 24), 1), 200)
+    const requestedPage = Math.max(Number(params?.page || 1), 1)
+    const { files, retentionDays, meta } = await listMappedFiles({
+      start_date: params?.start_date,
+      end_date: params?.end_date,
+      media_type: mediaType,
+      search,
+      limit: pageSize,
+      offset: (requestedPage - 1) * pageSize,
+      endpoint: '/api/me/gallery',
+    })
+    const total = Number(meta.total || 0)
+    const responsePageSize = Math.max(Number(meta.page_size || pageSize), 1)
+    return {
+      files,
+      total,
+      total_size: Number(meta.total_size || 0),
+      retention_days: retentionDays,
+      counts: {
+        all: Number(meta.counts?.all || 0),
+        image: Number(meta.counts?.image || 0),
+        video: Number(meta.counts?.video || 0),
+        music: Number(meta.counts?.music || 0),
+      },
+      media_type: mediaType,
+      page: Math.max(Number(meta.page || 1), 1),
+      page_size: responsePageSize,
+      page_count: Math.max(Number(meta.page_count || Math.ceil(total / responsePageSize) || 1), 1),
     }
   },
 

@@ -58,6 +58,7 @@ class AuthService:
             "enabled": bool(raw.get("enabled", True)),
             "created_at": created_at,
             "last_used_at": last_used_at,
+            "owner_user_id": self._clean(raw.get("owner_user_id")) or None,
         }
 
     def _load(self) -> list[dict[str, object]]:
@@ -84,6 +85,7 @@ class AuthService:
             "enabled": bool(item.get("enabled", True)),
             "created_at": item.get("created_at"),
             "last_used_at": item.get("last_used_at"),
+            "owner_user_id": item.get("owner_user_id") or None,
         }
 
     def list_keys(self, role: AuthRole | None = None) -> list[dict[str, object]]:
@@ -147,7 +149,7 @@ class AuthService:
             raise ValueError("这个名称已经在使用中了，换一个更容易区分的名称吧")
         return candidate
 
-    def create_key(self, *, role: AuthRole, name: str = "") -> tuple[dict[str, object], str]:
+    def create_key(self, *, role: AuthRole, name: str = "", owner_user_id: str = "") -> tuple[dict[str, object], str]:
         with self._lock:
             self._reload_locked()
             normalized_name = self._build_name_locked(name, role=role)
@@ -166,6 +168,7 @@ class AuthService:
                 "enabled": True,
                 "created_at": _now_iso(),
                 "last_used_at": None,
+                "owner_user_id": self._clean(owner_user_id) or None,
             }
             self._items.append(item)
             self._save()
@@ -221,6 +224,34 @@ class AuthService:
                 return False
             self._save()
             return True
+
+    def list_owner_keys(self, owner_user_id: str) -> list[dict[str, object]]:
+        owner = self._clean(owner_user_id)
+        if not owner:
+            return []
+        with self._lock:
+            self._reload_locked()
+            return [
+                self._public_item(item)
+                for item in self._items
+                if self._clean(item.get("owner_user_id")) == owner
+            ]
+
+    def delete_owner_keys(self, owner_user_id: str) -> int:
+        owner = self._clean(owner_user_id)
+        if not owner:
+            return 0
+        with self._lock:
+            self._reload_locked()
+            before = len(self._items)
+            self._items = [
+                item for item in self._items
+                if self._clean(item.get("owner_user_id")) != owner
+            ]
+            removed = before - len(self._items)
+            if removed:
+                self._save()
+            return removed
 
     def authenticate(self, raw_key: str) -> dict[str, object] | None:
         candidate = self._clean(raw_key)

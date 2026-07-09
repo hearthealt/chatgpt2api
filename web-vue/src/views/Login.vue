@@ -9,8 +9,22 @@
 
         <form class="mt-8 space-y-6" @submit.prevent="handleLogin">
           <div class="space-y-2">
+            <label for="username" class="ui-field-label text-sm font-medium text-foreground">
+              用户名
+            </label>
+            <Input
+              id="username"
+              v-model="username"
+              type="text"
+              size="md"
+              block
+              placeholder="输入用户名"
+              :disabled="isLoading"
+            />
+          </div>
+          <div class="space-y-2">
             <label for="password" class="ui-field-label text-sm font-medium text-foreground">
-              管理密钥
+              密码
             </label>
             <Input
               id="password"
@@ -18,7 +32,7 @@
               type="password"
               size="md"
               block
-              placeholder="输入 Bearer key"
+              placeholder="输入密码"
               :disabled="isLoading"
             />
           </div>
@@ -28,11 +42,20 @@
             size="md"
             variant="primary"
             block
-            :disabled="isLoading || !password"
+            :disabled="isLoading || !password || !username"
           >
             {{ isLoading ? '登录中...' : '登录' }}
           </Button>
         </form>
+
+        <div class="mt-4 text-center text-xs text-muted-foreground">
+          <RouterLink
+            :to="{ name: 'user-register' }"
+            class="transition-colors hover:text-foreground"
+          >
+            还没有账号？去注册
+          </RouterLink>
+        </div>
 
         <div class="mt-8 flex items-center justify-center gap-4 text-xs text-muted-foreground">
           <a
@@ -55,7 +78,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { Button, Input } from 'nanocat-ui'
 import { useToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
@@ -64,23 +87,24 @@ const router = useRouter()
 const authStore = useAuthStore()
 const toast = useToast()
 
+const username = ref('')
 const password = ref('')
 const isLoading = ref(false)
 
 async function handleLogin() {
-  if (!password.value) return
+  if (!password.value || !username.value) return
 
   isLoading.value = true
 
   try {
-    const loggedIn = await authStore.login(password.value)
+    const loggedIn = await authStore.login({ username: username.value.trim(), password: password.value })
     if (!loggedIn) {
-      toast.error('密钥无效或已失效。')
+      toast.error('用户名或密码不正确。')
       return
     }
     await router.push(authStore.isUser ? { name: 'studio' } : { name: 'dashboard' })
   } catch (error: any) {
-    toast.error(error.message || '登录失败，请检查密码。')
+    toast.error(error.message || '登录失败，请检查账号信息。')
   } finally {
     isLoading.value = false
   }

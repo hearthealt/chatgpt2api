@@ -2,6 +2,11 @@
 import { computed, ref } from 'vue'
 import { authApi } from '@/api/auth'
 import { getAuthToken } from '@/api/client'
+import {
+  clearLastSubject,
+  purgeUserScopedPreferences,
+  reconcileSubjectScopedPreferences,
+} from '@/lib/preferences'
 import type { AuthStatusResponse } from '@/types/api'
 
 type AuthRole = 'admin' | 'user' | ''
@@ -29,6 +34,10 @@ export const useAuthStore = defineStore('auth', () => {
     role.value = isLoggedIn.value ? normalizeRole(status?.role) : ''
     subjectId.value = isLoggedIn.value ? String(status?.subject_id || '') : ''
     name.value = isLoggedIn.value ? String(status?.name || '') : ''
+    // 切换账号时清除上一个用户的本地会话数据，避免串号
+    if (isLoggedIn.value && subjectId.value) {
+      reconcileSubjectScopedPreferences(subjectId.value)
+    }
   }
 
   function clearIdentity() {
@@ -38,11 +47,29 @@ export const useAuthStore = defineStore('auth', () => {
     name.value = ''
   }
 
-  // 登录
-  async function login(password: string) {
+  // 登录：支持用户名+密码，或直接粘贴密钥（admin）
+  async function login(credential: string | { username?: string; password: string }) {
     isLoading.value = true
     try {
-      await authApi.login({ password })
+      const payload = typeof credential === 'string' ? { password: credential } : credential
+      await authApi.login(payload)
+      const status = await authApi.checkAuth()
+      applyStatus(status)
+      lastCheckedAt.value = Date.now()
+      return isLoggedIn.value
+    } catch (error) {
+      clearIdentity()
+      throw error
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  // 自助注册
+  async function register(payload: { username: string; password: string; invite_code?: string }) {
+    isLoading.value = true
+    try {
+      await authApi.register(payload)
       const status = await authApi.checkAuth()
       applyStatus(status)
       lastCheckedAt.value = Date.now()
@@ -62,6 +89,9 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       clearIdentity()
       lastCheckedAt.value = 0
+      // 登出时清除本地会话数据，避免下一个账号在同一浏览器看到历史
+      purgeUserScopedPreferences()
+      clearLastSubject()
     }
   }
 
@@ -106,6 +136,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAdmin,
     isUser,
     login,
+    register,
     logout,
     checkAuth,
     clearIdentity,

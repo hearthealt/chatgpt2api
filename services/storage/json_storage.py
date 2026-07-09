@@ -10,11 +10,13 @@ from services.storage.base import StorageBackend
 class JSONStorageBackend(StorageBackend):
     """本地 JSON 文件存储后端"""
 
-    def __init__(self, file_path: Path, auth_keys_path: Path | None = None):
+    def __init__(self, file_path: Path, auth_keys_path: Path | None = None, users_path: Path | None = None):
         self.file_path = file_path
         self.auth_keys_path = auth_keys_path or file_path.with_name("auth_keys.json")
+        self.users_path = users_path or file_path.with_name("users.json")
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
         self.auth_keys_path.parent.mkdir(parents=True, exist_ok=True)
+        self.users_path.parent.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
     def _load_json_list(file_path: Path) -> list[dict[str, Any]]:
@@ -54,6 +56,22 @@ class JSONStorageBackend(StorageBackend):
         """保存鉴权密钥数据到 JSON 文件"""
         write_json_file(self.auth_keys_path, {"items": auth_keys})
 
+    def load_users(self) -> list[dict[str, Any]]:
+        """从 JSON 文件加载用户账户数据"""
+        data = read_json_file(
+            self.users_path,
+            name="users.json",
+            default_factory=list,
+            expected_types=(dict, list),
+        )
+        if isinstance(data, dict):
+            data = data.get("items")
+        return data if isinstance(data, list) else []
+
+    def save_users(self, users: list[dict[str, Any]]) -> None:
+        """保存用户账户数据到 JSON 文件"""
+        write_json_file(self.users_path, {"items": users})
+
     def health_check(self) -> dict[str, Any]:
         """健康检查"""
         try:
@@ -67,6 +85,8 @@ class JSONStorageBackend(StorageBackend):
                 "file_path": str(self.file_path),
                 "auth_keys_file_exists": self.auth_keys_path.exists(),
                 "auth_keys_file_path": str(self.auth_keys_path),
+                "users_file_exists": self.users_path.exists(),
+                "users_file_path": str(self.users_path),
             }
         except Exception as e:
             return {

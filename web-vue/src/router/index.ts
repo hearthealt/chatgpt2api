@@ -3,7 +3,7 @@ import { useAuthStore } from '@/stores/auth'
 
 const adminHome = { name: 'dashboard' }
 const userHome = { name: 'studio' }
-const userAllowedRoutes = new Set(['studio'])
+const userAllowedRoutes = new Set(['studio', 'my-gallery', 'my-usage', 'account-settings'])
 
 const router = createRouter({
   history: createWebHashHistory(import.meta.env.BASE_URL),
@@ -27,6 +27,12 @@ const router = createRouter({
       meta: { requiresAuth: false },
     },
     {
+      path: '/register-user',
+      name: 'user-register',
+      component: () => import('@/views/UserRegister.vue'),
+      meta: { requiresAuth: false },
+    },
+    {
       path: '/',
       component: () => import('@/layouts/AppShell.vue'),
       meta: { requiresAuth: true },
@@ -41,6 +47,12 @@ const router = createRouter({
           path: 'accounts',
           name: 'accounts',
           component: () => import('@/views/Accounts.vue'),
+          meta: { adminOnly: true },
+        },
+        {
+          path: 'users',
+          name: 'users',
+          component: () => import('@/views/UsersAdmin.vue'),
           meta: { adminOnly: true },
         },
         {
@@ -101,6 +113,24 @@ const router = createRouter({
           path: 'studio',
           name: 'studio',
           component: () => import('@/views/Studio.vue'),
+          meta: {},
+        },
+        {
+          path: 'my-gallery',
+          name: 'my-gallery',
+          component: () => import('@/views/MyGallery.vue'),
+          meta: {},
+        },
+        {
+          path: 'my-usage',
+          name: 'my-usage',
+          component: () => import('@/views/MyUsage.vue'),
+          meta: {},
+        },
+        {
+          path: 'account-settings',
+          name: 'account-settings',
+          component: () => import('@/views/AccountSettings.vue'),
           meta: {},
         },
       ],

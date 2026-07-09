@@ -12,11 +12,46 @@ from fastapi.responses import FileResponse, Response
 from PIL import Image, ImageOps
 
 from services.config import config
-from services.deleted_images_service import record_deleted_images
+from services.deleted_images_service import image_rel_from_url, record_deleted_images
 from services.image_storage_service import image_storage_service
 from services.image_tags_service import load_tags, remove_tags
+from services.log_service import LOG_TYPE_CALL, log_service
 from utils.log import logger
 from utils.timezone import beijing_now, parse_to_beijing_naive
+
+
+_owner_index_cache: dict[str, object] = {"at": 0.0, "map": {}}
+_OWNER_INDEX_TTL = 30.0
+
+
+def build_image_owner_index() -> dict[str, str]:
+    """从调用日志构建「图片相对路径 -> 生成者名称」索引（带 30s 缓存）。"""
+    now = time.time()
+    if (now - float(_owner_index_cache.get("at") or 0)) < _OWNER_INDEX_TTL:
+        cached = _owner_index_cache.get("map")
+        if isinstance(cached, dict):
+            return cached
+    mapping: dict[str, str] = {}
+    try:
+        items = log_service.list(type=LOG_TYPE_CALL, limit=20000)
+    except Exception:
+        items = []
+    for item in items:
+        detail = item.get("detail") if isinstance(item.get("detail"), dict) else {}
+        urls = detail.get("urls")
+        if not isinstance(urls, list) or not urls:
+            continue
+        label = str(detail.get("key_name") or "").strip()
+        if not label:
+            role = str(detail.get("role") or "").strip()
+            label = "管理员" if role == "admin" else "未知"
+        for url in urls:
+            rel = image_rel_from_url(url)
+            if rel and rel not in mapping:
+                mapping[rel] = label
+    _owner_index_cache["at"] = now
+    _owner_index_cache["map"] = mapping
+    return mapping
 
 THUMBNAIL_SIZE = (320, 320)
 IMAGE_LIST_MAINTENANCE_INTERVAL_SECS = 300
@@ -256,6 +291,8 @@ def list_images(
     media_type: str = "all",
     tag: str = "",
     search: str = "",
+    only_paths: set[str] | None = None,
+    with_owner: bool = False,
 ) -> dict[str, object]:
     paged = int(limit or 0) > 0
     if paged:
@@ -263,6 +300,7 @@ def list_images(
     else:
         _run_periodic_list_maintenance()
     all_tags = load_tags()
+    owner_index = build_image_owner_index() if with_owner else {}
     retention_days = config.image_retention_days
     raw_items = image_storage_service.list_items(
         base_url,
@@ -274,6 +312,8 @@ def list_images(
     normalized_items = []
     for item in raw_items:
         path = str(item["path"])
+        if only_paths is not None and path not in only_paths:
+            continue
         tags = all_tags.get(path, [])
         current_type = _media_type_for_item(item)
         expired, expires_in_seconds = _expiry_for_item(item, retention_days)
@@ -286,6 +326,7 @@ def list_images(
             "tags": tags,
             "expired": expired,
             "expires_in_seconds": expires_in_seconds,
+            **({"owner": owner_index.get(path, "")} if with_owner else {}),
         })
 
     tag_filter = tag.strip()

@@ -305,6 +305,96 @@ def _normalize_third_party_apps_settings(value: object) -> dict[str, object]:
     }
 
 
+DEFAULT_USER_ACCESS: dict[str, object] = {
+    "default_call_limit": 1000,
+    "default_image_limit": 200,
+    "period": "monthly",
+    "open_registration": True,
+    "require_invite": False,
+    "invite_code": "",
+    "session_ttl_days": 7,
+}
+
+_QUOTA_PERIODS = {"daily", "monthly", "total"}
+
+
+def _normalize_quota_int(value: object, default: int) -> int:
+    """配额上限：-1 表示无限，0 表示使用全局默认（用户级），其余为正整数。"""
+    try:
+        result = int(value)
+    except (TypeError, ValueError):
+        return default
+    return result if result >= -1 else default
+
+
+def _normalize_user_access_settings(value: object) -> dict[str, object]:
+    source = value if isinstance(value, dict) else {}
+    period = str(source.get("period") or DEFAULT_USER_ACCESS["period"]).strip().lower()
+    if period not in _QUOTA_PERIODS:
+        period = str(DEFAULT_USER_ACCESS["period"])
+    try:
+        ttl_days = int(source.get("session_ttl_days", DEFAULT_USER_ACCESS["session_ttl_days"]))
+    except (TypeError, ValueError):
+        ttl_days = int(DEFAULT_USER_ACCESS["session_ttl_days"])
+    ttl_days = max(1, min(ttl_days, 365))
+    return {
+        "default_call_limit": _normalize_quota_int(
+            source.get("default_call_limit"), int(DEFAULT_USER_ACCESS["default_call_limit"])
+        ),
+        "default_image_limit": _normalize_quota_int(
+            source.get("default_image_limit"), int(DEFAULT_USER_ACCESS["default_image_limit"])
+        ),
+        "period": period,
+        "open_registration": _normalize_bool(source.get("open_registration"), True),
+        "require_invite": _normalize_bool(source.get("require_invite"), False),
+        "invite_code": str(source.get("invite_code") or "").strip(),
+        "session_ttl_days": ttl_days,
+    }
+
+
+def _normalize_invite_code(value: object) -> dict[str, object] | None:
+    if not isinstance(value, dict):
+        return None
+    code = str(value.get("code") or "").strip()
+    if not code:
+        return None
+    try:
+        max_uses = int(value.get("max_uses", 1))
+    except (TypeError, ValueError):
+        max_uses = 1
+    max_uses = max(0, max_uses)  # 0 = 不限次数
+    try:
+        used_count = int(value.get("used_count", 0))
+    except (TypeError, ValueError):
+        used_count = 0
+    used_count = max(0, used_count)
+    return {
+        "code": code,
+        "max_uses": max_uses,
+        "used_count": used_count,
+        "enabled": _normalize_bool(value.get("enabled"), True),
+        "created_at": str(value.get("created_at") or "").strip(),
+        "note": str(value.get("note") or "").strip(),
+    }
+
+
+def _normalize_invite_codes(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    result: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for item in value:
+        normalized = _normalize_invite_code(item)
+        if normalized is None:
+            continue
+        key = str(normalized["code"]).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(normalized)
+    return result
+
+
 def _normalize_provider(value: object) -> dict[str, object] | None:
     if not isinstance(value, dict):
         return None
@@ -727,6 +817,13 @@ class ConfigStore:
     def get_third_party_apps_settings(self) -> dict[str, object]:
         return _normalize_third_party_apps_settings(self.data.get("third_party_apps"))
 
+    def get_user_access_settings(self) -> dict[str, object]:
+        return _normalize_user_access_settings(self.data.get("user_access"))
+
+    def get_invite_codes(self) -> list[dict[str, object]]:
+        self.reload_if_changed()
+        return _normalize_invite_codes(self.data.get("invite_codes"))
+
     def get_providers_settings(self) -> list[dict[str, object]]:
         self.reload_if_changed()
         return _normalize_providers_settings(self.data.get("providers"))
@@ -748,6 +845,10 @@ class ConfigStore:
                 )
             if "third_party_apps" in next_data:
                 next_data["third_party_apps"] = _normalize_third_party_apps_settings(next_data.get("third_party_apps"))
+            if "user_access" in next_data:
+                next_data["user_access"] = _normalize_user_access_settings(next_data.get("user_access"))
+            if "invite_codes" in next_data:
+                next_data["invite_codes"] = _normalize_invite_codes(next_data.get("invite_codes"))
             if "providers" in next_data:
                 next_data["providers"] = _normalize_providers_settings(next_data.get("providers"))
             if "proxy_runtime" in next_data:

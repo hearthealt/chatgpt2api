@@ -927,6 +927,11 @@ const menuItems = [
     icon: 'M12 12a3.5 3.5 0 1 0-3.5-3.5A3.5 3.5 0 0 0 12 12zm0 2c-4.1 0-7.5 2.2-7.5 5v1h15v-1c0-2.8-3.4-5-7.5-5z',
   },
   {
+    path: '/users',
+    label: '用户与邀请',
+    icon: 'M16 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm-8 0a3 3 0 1 0-3-3 3 3 0 0 0 3 3zm0 2c-2.7 0-6 1.3-6 4v2h7v-2c0-1.3.5-2.5 1.4-3.4A9.7 9.7 0 0 0 8 13zm8 0c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z',
+  },
+  {
     path: '/register',
     label: '注册账号',
     icon: 'M7 3h10a2 2 0 0 1 2 2v3h-2V5H7v14h10v-3h2v3a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm8.6 5.4L20.2 13l-4.6 4.6-1.4-1.4 2.2-2.2H9v-2h7.4l-2.2-2.2 1.4-1.4z',
@@ -958,6 +963,24 @@ const menuItems = [
   },
 ]
 
+const userMenuItems = [
+  {
+    path: '/my-gallery',
+    label: '我的图库',
+    icon: 'M22 16V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2zm-11-4 2.03 2.71L16 11l4 5H8l3-3zM2 6v14a2 2 0 0 0 2 2h14v-2H4V6H2z',
+  },
+  {
+    path: '/my-usage',
+    label: '我的用量',
+    icon: 'M4 5h3v14H4V5zm5 6h3v8H9v-8zm5-4h3v12h-3V7zm5 7h3v5h-3v-5z',
+  },
+  {
+    path: '/account-settings',
+    label: '个人设置',
+    icon: 'M12 12a3.5 3.5 0 1 0-3.5-3.5A3.5 3.5 0 0 0 12 12zm0 2c-4.1 0-7.5 2.2-7.5 5v1h15v-1c0-2.8-3.4-5-7.5-5z',
+  },
+]
+
 const utilityMenuItems = [
   {
     path: '/debug',
@@ -969,6 +992,7 @@ const utilityMenuItems = [
 const routeTitleMap: Record<string, string> = {
   dashboard: '概览中心',
   accounts: '账号管理',
+  users: '用户与邀请',
   logs: '日志管理',
   gallery: '图片管理',
   proxy: '代理管理',
@@ -979,13 +1003,19 @@ const routeTitleMap: Record<string, string> = {
   monitor: '实时监控',
   docs: '文档教程',
   studio: '对话画图',
+  'my-gallery': '我的图库',
+  'my-usage': '我的用量',
+  'account-settings': '个人设置',
 }
 
 const visibleMenuItems = computed(() => {
   if (authStore.isUser) {
-    return menuItems.filter(item => item.path === '/studio')
+    const studio = menuItems.filter(item => item.path === '/studio')
+    return [...studio, ...userMenuItems]
   }
-  return menuItems
+  // 管理员：完整菜单 + 个人设置（用于修改自己的登录密码）
+  const accountSettings = userMenuItems.find(item => item.path === '/account-settings')
+  return accountSettings ? [...menuItems, accountSettings] : menuItems
 })
 
 const visibleUtilityMenuItems = computed(() => (authStore.isAdmin ? utilityMenuItems : []))
@@ -998,7 +1028,7 @@ const currentPageTitle = computed(() => {
 
 function titleForRoute(name: unknown, path: string) {
   const routeName = String(name || '')
-  const item = [...menuItems, ...utilityMenuItems].find((menuItem) => menuItem.path === path)
+  const item = [...menuItems, ...userMenuItems, ...utilityMenuItems].find((menuItem) => menuItem.path === path)
   return item?.label || routeTitleMap[routeName] || '页面'
 }
 
@@ -1093,6 +1123,7 @@ const updateCheckingMessage = '正在检查云端版本...'
 const routeViewLoaders: Record<string, () => Promise<unknown>> = {
   '/': () => import('@/views/Dashboard.vue'),
   '/accounts': () => import('@/views/Accounts.vue'),
+  '/users': () => import('@/views/UsersAdmin.vue'),
   '/logs': () => import('@/views/Logs.vue'),
   '/gallery': () => import('@/views/Gallery.vue'),
   '/monitor': () => import('@/views/Monitor.vue'),
@@ -1102,6 +1133,9 @@ const routeViewLoaders: Record<string, () => Promise<unknown>> = {
   '/register': () => import('@/views/Register.vue'),
   '/debug': () => import('@/views/DebugCenter.vue'),
   '/studio': () => import('@/views/Studio.vue'),
+  '/my-gallery': () => import('@/views/MyGallery.vue'),
+  '/my-usage': () => import('@/views/MyUsage.vue'),
+  '/account-settings': () => import('@/views/AccountSettings.vue'),
 }
 
 watch(
