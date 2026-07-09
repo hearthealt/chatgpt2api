@@ -636,7 +636,10 @@ def create_router(app_version: str) -> APIRouter:
 
     @router.get("/version")
     async def get_version():
-        return {"version": app_version}
+        return {
+            "version": app_version,
+            "changelog_url": "https://github.com/hearthealt/chatgpt2api/blob/main/CHANGELOG.md"
+        }
 
     @router.get("/public/stats")
     async def public_stats():
@@ -1291,5 +1294,130 @@ td{{padding:8px 12px;border-top:1px solid #2a2d3a;font-size:14px}}tr:hover td{{b
 </table>
 <div class="refresh">JSON: <span class="api-url">/health?format=json</span></div>
 </div></body></html>""")
+
+    @router.get("/api/system/latest-version")
+    async def get_latest_version(authorization: str | None = Header(default=None)):
+        """获取云端最新版本信息
+
+        由后端代理请求 GitHub，避免用户本地无法访问 GitHub 的问题。
+        返回最新版本号和 CHANGELOG 内容。
+        """
+        import asyncio
+        import httpx
+
+        require_admin(authorization)
+
+        version_url = "https://raw.githubusercontent.com/hearthealt/chatgpt2api/main/VERSION"
+        changelog_url = "https://raw.githubusercontent.com/hearthealt/chatgpt2api/main/CHANGELOG.md"
+
+        # 复用系统配置的上游代理（如果有），保证后端能访问 GitHub
+        proxy = ""
+        try:
+            profile = proxy_settings.get_profile(upstream=True)
+            proxy = getattr(profile, "proxy_url", "") or ""
+        except Exception:
+            proxy = ""
+
+        client_kwargs: dict[str, Any] = {
+            "timeout": 15.0,
+            "verify": not proxy_settings.should_skip_ssl_verify(),
+        }
+        if proxy:
+            client_kwargs["proxy"] = proxy
+
+        try:
+            async with httpx.AsyncClient(**client_kwargs) as client:
+                version_resp, changelog_resp = await asyncio.gather(
+                    client.get(version_url),
+                    client.get(changelog_url),
+                )
+
+            if version_resp.status_code != 200:
+                return {
+                    "status": "error",
+                    "message": f"获取版本信息失败：HTTP {version_resp.status_code}",
+                }
+
+            return {
+                "status": "success",
+                "version": version_resp.text.strip(),
+                "changelog": changelog_resp.text if changelog_resp.status_code == 200 else "",
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"获取云端版本失败：{type(e).__name__}: {str(e)}",
+            }
+
+    @router.post("/api/system/update")
+    async def trigger_update(authorization: str | None = Header(default=None)):
+        """触发系统更新
+
+        调用 Watchtower API 触发容器更新。
+        Watchtower 会：
+        1. 拉取最新镜像
+        2. 停止当前容器
+        3. 启动新容器
+        4. 清理旧镜像
+
+        需要管理员权限
+        """
+        import os
+        import httpx
+
+        require_admin(authorization)
+
+        # 获取 Watchtower API Token
+        token = os.getenv("WATCHTOWER_HTTP_API_TOKEN", "")
+        if not token or token == "changeme":
+            return {
+                "status": "error",
+                "message": "Watchtower API token not configured. Please set WATCHTOWER_HTTP_API_TOKEN environment variable."
+            }
+
+        # Watchtower HTTP API 端点
+        watchtower_url = os.getenv("WATCHTOWER_URL", "http://chatgpt2api-watchtower:8080")
+        update_endpoint = f"{watchtower_url}/v1/update"
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.get(
+                    update_endpoint,
+                    headers={"Authorization": f"Bearer {token}"}
+                )
+
+                if response.status_code == 200:
+                    return {
+                        "status": "success",
+                        "message": "更新已触发，容器将在几秒内重启。请稍后刷新页面。"
+                    }
+                elif response.status_code == 204:
+                    return {
+                        "status": "no_update",
+                        "message": "当前已是最新版本，无需更新。"
+                    }
+                else:
+                    return {
+                        "status": "error",
+                        "message": f"Watchtower API returned status {response.status_code}: {response.text}"
+                    }
+
+        except httpx.ConnectError as e:
+            return {
+                "status": "error",
+                "message": f"无法连接到 Watchtower 服务，请检查 Watchtower 容器是否正常运行。({type(e).__name__})"
+            }
+        except (httpx.ReadTimeout, httpx.ReadError, httpx.RemoteProtocolError, httpx.WriteError) as e:
+            # Watchtower 在更新时会重启本容器，导致本次请求连接被中断。
+            # 这类异常恰恰说明更新已经开始，视为成功。
+            return {
+                "status": "success",
+                "message": "更新已触发，容器将在几秒内重启。请稍后刷新页面。"
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"触发更新时发生错误：{type(e).__name__}: {str(e)}"
+            }
 
     return router

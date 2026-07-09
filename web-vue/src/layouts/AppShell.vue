@@ -233,8 +233,17 @@
               v-if="authStore.isAdmin"
               @click="openUpdateDialog"
               title="查看版本更新"
+              root-class="relative"
             >
               {{ versionButtonText }}
+              <span
+                v-if="hasNewerVersion"
+                class="absolute -right-1 -top-1 flex h-2.5 w-2.5"
+                title="发现新版本"
+              >
+                <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75"></span>
+                <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500"></span>
+              </span>
             </Button>
             <Button
               size="sm"
@@ -475,6 +484,33 @@
         {{ updateCheckMessage }}
       </div>
 
+      <!-- 更新操作按钮 -->
+      <div v-if="hasNewerVersion" class="mt-4 flex items-center gap-3 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 dark:border-blue-900/50 dark:bg-blue-950/30">
+        <Icon icon="mdi:information-outline" class="h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" />
+        <div class="flex-1">
+          <p class="text-sm font-medium text-blue-900 dark:text-blue-100">发现新版本 {{ latestVersionLabel }}</p>
+          <p class="mt-0.5 text-xs text-blue-700 dark:text-blue-300">更新后容器将自动重启</p>
+        </div>
+        <div class="flex gap-2">
+          <button
+            type="button"
+            class="rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+            :disabled="isUpdating"
+            @click="dismissUpdate"
+          >
+            稍后提醒
+          </button>
+          <button
+            type="button"
+            class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-blue-500 dark:hover:bg-blue-600"
+            :disabled="isUpdating"
+            @click="triggerSystemUpdate"
+          >
+            {{ isUpdating ? '更新中...' : '立即更新' }}
+          </button>
+        </div>
+      </div>
+
       <div class="mt-5 max-h-[56vh] space-y-5 overflow-y-auto pr-1">
         <div
           v-for="release in releaseEntries"
@@ -543,8 +579,268 @@
         </Button>
       </ModalFooter>
     </ModalShell>
+
+    <!-- 新版本常驻通知条 -->
+    <Transition name="update-banner-slide">
+      <div v-if="hasNewerVersion && !isUpdatingOverlay" class="update-banner">
+        <div class="update-banner-body">
+          <strong class="update-banner-title">发现新版本 {{ latestVersionLabel }}</strong>
+          <small class="update-banner-subtitle">当前 {{ currentVersionLabel }}，点击详情查看并更新</small>
+        </div>
+        <div class="update-banner-actions">
+          <button
+            type="button"
+            class="update-banner-btn update-banner-btn-primary"
+            title="查看更新日志"
+            @click="openUpdateDialog"
+          >
+            详情
+          </button>
+          <button
+            type="button"
+            class="update-banner-close"
+            title="稍后提醒"
+            aria-label="关闭"
+            @click="dismissUpdate"
+          >
+            <span class="update-banner-close-x">✕</span>
+          </button>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 更新中全屏遮罩 -->
+    <Transition name="update-overlay-fade">
+      <div v-if="isUpdatingOverlay" class="update-overlay">
+        <div class="update-overlay-card">
+          <div class="update-overlay-spinner">
+            <span class="update-overlay-ring"></span>
+          </div>
+          <h3 class="update-overlay-title">系统更新中</h3>
+          <p class="update-overlay-text">{{ updateProgressText }}</p>
+          <p class="update-overlay-timer">{{ updateWaitSeconds }} 秒后自动刷新</p>
+          <p class="update-overlay-hint">请勿关闭页面</p>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
+
+<style scoped>
+.update-banner {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: min(90vw, 26rem);
+  padding: 0.875rem 1rem;
+  border: 1px solid hsl(var(--primary) / 0.3);
+  border-radius: 0.875rem;
+  background: hsl(var(--card));
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(8px);
+}
+
+.update-banner-icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.625rem;
+  background: hsl(var(--primary) / 0.12);
+  color: hsl(var(--primary));
+}
+
+.update-banner-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.update-banner-title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+  line-height: 1.3;
+}
+
+.update-banner-subtitle {
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
+  line-height: 1.4;
+}
+
+.update-banner-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.update-banner-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.875rem;
+  padding: 0 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.update-banner-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.update-banner-btn-primary {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+.update-banner-btn-primary:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.update-banner-btn-ghost {
+  border-color: hsl(var(--border));
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+}
+
+.update-banner-btn-ghost:hover {
+  background: hsl(var(--secondary));
+  color: hsl(var(--foreground));
+}
+
+.update-banner-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.875rem;
+  height: 1.875rem;
+  flex-shrink: 0;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.5rem;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.update-banner-close-x {
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1;
+  color: hsl(var(--foreground));
+}
+
+.update-banner-close:hover {
+  border-color: hsl(var(--foreground) / 0.3);
+  background: hsl(var(--secondary));
+  color: hsl(var(--foreground));
+}
+
+.update-banner-slide-enter-active,
+.update-banner-slide-leave-active {
+  transition: opacity 0.3s, transform 0.3s;
+}
+
+.update-banner-slide-enter-from,
+.update-banner-slide-leave-to {
+  opacity: 0;
+  transform: translateX(1.5rem);
+}
+
+.update-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(6px);
+}
+
+.update-overlay-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: min(90vw, 24rem);
+  padding: 2rem 2.5rem;
+  border-radius: 1rem;
+  background: hsl(var(--card));
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  text-align: center;
+}
+
+.update-overlay-spinner {
+  color: hsl(var(--primary));
+  margin-bottom: 0.5rem;
+}
+
+.update-overlay-ring {
+  display: inline-block;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 3px solid hsl(var(--primary) / 0.2);
+  border-top-color: hsl(var(--primary));
+  border-radius: 50%;
+  animation: update-overlay-spin 0.8s linear infinite;
+}
+
+@keyframes update-overlay-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.update-overlay-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+}
+
+.update-overlay-text {
+  font-size: 0.875rem;
+  color: hsl(var(--foreground));
+  line-height: 1.5;
+}
+
+.update-overlay-timer {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: hsl(var(--primary));
+}
+
+.update-overlay-hint {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.update-overlay-fade-enter-active,
+.update-overlay-fade-leave-active {
+  transition: opacity 0.3s;
+}
+
+.update-overlay-fade-enter-from,
+.update-overlay-fade-leave-to {
+  opacity: 0;
+}
+</style>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -567,6 +863,7 @@ import { useToast } from '@/composables/useToast'
 import { getBooleanPreference, preferenceKeys, setBooleanPreference } from '@/lib/preferences'
 import { applyThemeMode, getStoredThemeMode, setStoredThemeMode, type ThemeMode } from '@/lib/theme'
 import { isNewerVersion, normalizeVersionTag, parseChangelog, type ReleaseInfo } from '@/lib/release'
+import { triggerUpdate, getLatestVersion } from '@/api/system'
 import type { Settings } from '@/types/api'
 import localVersion from '../../../VERSION?raw'
 
@@ -581,10 +878,15 @@ const confirmDialog = useConfirmDialog()
 const isApiInfoOpen = ref(false)
 const isUpdateDialogOpen = ref(false)
 const isCheckingUpdate = ref(false)
+const isUpdating = ref(false)
+const isUpdatingOverlay = ref(false)
+const updateProgressText = ref('')
+const updateWaitSeconds = ref(0)
 const currentVersionTag = ref(normalizeVersionTag(localVersion))
 const latestVersionTag = ref('')
 const releaseEntries = ref<ReleaseInfo[]>([])
 const updateCheckMessage = ref('')
+const updateDismissed = ref(false)
 const currentAuthToken = ref('')
 const thirdPartyApps = ref<Settings['third_party_apps'] | null>(null)
 const themeMode = ref<ThemeMode>(getStoredThemeMode())
@@ -756,6 +1058,10 @@ const apiKeyDisplay = computed(() => currentAuthToken.value || '未登录')
 const currentVersionLabel = computed(() => normalizeVersionTag(currentVersionTag.value || ''))
 const latestVersionLabel = computed(() => normalizeVersionTag(latestVersionTag.value || releaseEntries.value[0]?.version || currentVersionTag.value || ''))
 const versionButtonText = computed(() => currentVersionLabel.value || '版本')
+const hasNewerVersion = computed(() => {
+  if (updateDismissed.value) return false
+  return latestVersionLabel.value && isNewerVersion(latestVersionLabel.value, currentVersionLabel.value)
+})
 function releaseItemTone(type: string): 'default' | 'muted' | 'success' | 'warning' | 'danger' | 'info' {
   const value = String(type || '').trim()
   if (['新增', '添加', 'Added'].includes(value)) return 'success'
@@ -908,11 +1214,32 @@ async function checkForUpdates(showMessage = true) {
   if (isCheckingUpdate.value) return
   isCheckingUpdate.value = true
   updateCheckMessage.value = updateCheckingMessage
+
+  // 手动检查时，重置忽略状态
+  updateDismissed.value = false
+
   try {
-    const [version, changelog] = await Promise.all([
-      fetchRemoteText(latestVersionUrl),
-      fetchRemoteText(latestChangelogUrl),
-    ])
+    // 优先通过后端代理获取（后端服务器通常能访问 GitHub）
+    let version = ''
+    let changelog = ''
+    try {
+      const remote = await getLatestVersion()
+      if (remote.status === 'success' && remote.version) {
+        version = remote.version
+        changelog = remote.changelog || ''
+      } else {
+        throw new Error(remote.message || '后端获取版本失败')
+      }
+    } catch (backendError) {
+      // 后端获取失败时，降级为前端直接请求 GitHub（需要用户本地能访问）
+      const [remoteVersion, remoteChangelog] = await Promise.all([
+        fetchRemoteText(latestVersionUrl),
+        fetchRemoteText(latestChangelogUrl),
+      ])
+      version = remoteVersion
+      changelog = remoteChangelog
+    }
+
     latestVersionTag.value = normalizeVersionTag(version)
     const remoteReleases = parseChangelog(changelog)
     if (remoteReleases.length) {
@@ -935,6 +1262,71 @@ async function checkForUpdates(showMessage = true) {
   } finally {
     isCheckingUpdate.value = false
   }
+}
+
+async function triggerSystemUpdate() {
+  if (isUpdating.value) return
+
+  const confirmed = await confirmDialog.ask({
+    title: '确认更新',
+    message: '更新过程中服务将短暂中断（约10-30秒），容器会自动重启。\n\n确定要继续吗？',
+    confirmText: '确认更新',
+  })
+
+  if (!confirmed) return
+
+  isUpdating.value = true
+
+  try {
+    const result = await triggerUpdate()
+
+    if (result.status === 'success') {
+      // 关闭版本对话框，显示全屏更新遮罩
+      isUpdateDialogOpen.value = false
+      startUpdateOverlay()
+    } else if (result.status === 'no_update') {
+      toast.info(result.message)
+      updateDismissed.value = true
+    } else {
+      toast.error(result.message)
+    }
+  } catch (error: any) {
+    toast.error(error?.message || '触发更新失败')
+  } finally {
+    isUpdating.value = false
+  }
+}
+
+// 更新遮罩 + 固定倒计时后刷新
+function startUpdateOverlay() {
+  isUpdatingOverlay.value = true
+  updateProgressText.value = '正在拉取新版本镜像并重启服务...'
+
+  const totalWait = 15 // 固定等待 15 秒（预留容器拉取镜像 + 重启时间）
+  updateWaitSeconds.value = totalWait
+
+  const tick = () => {
+    updateWaitSeconds.value -= 1
+
+    if (updateWaitSeconds.value <= 0) {
+      updateProgressText.value = '更新完成，正在刷新页面...'
+      window.setTimeout(() => window.location.reload(), 500)
+      return
+    }
+
+    if (updateWaitSeconds.value <= 8) {
+      updateProgressText.value = '服务即将恢复，请稍候...'
+    }
+
+    window.setTimeout(tick, 1000)
+  }
+
+  window.setTimeout(tick, 1000)
+}
+
+function dismissUpdate() {
+  updateDismissed.value = true
+  toast.info('已忽略此次更新提醒，下次打开页面将再次提示')
 }
 
 async function fetchRemoteText(url: string) {
@@ -1060,6 +1452,10 @@ onMounted(() => {
   setupRoutePendingGuards()
   void loadCurrentVersion()
   void loadThirdPartyApps()
+  // 页面加载时静默检查新版本（用于版本号红点提示）
+  if (authStore.isAdmin) {
+    void checkForUpdates(false)
+  }
 })
 
 onBeforeUnmount(() => {
