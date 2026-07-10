@@ -382,10 +382,21 @@ def _providers_list() -> list[dict[str, Any]]:
     return config.get_providers_settings()
 
 
+def _provider_models_url(base_url: str) -> str:
+    """构建 /v1/models 地址，兼容 base_url 是否已包含 /v1 或 /v1/models。"""
+    normalized = base_url.strip().rstrip("/")
+    lowered = normalized.lower()
+    if lowered.endswith("/v1/models"):
+        return normalized
+    if lowered.endswith("/v1"):
+        return f"{normalized}/models"
+    return f"{normalized}/v1/models"
+
+
 def _test_provider_connection(base_url: str, api_key: str, proxy: str) -> dict[str, Any]:
     from curl_cffi import requests
 
-    url = f"{base_url.rstrip('/')}s"
+    url = _provider_models_url(base_url)
     headers = {"Accept": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -420,7 +431,7 @@ def _test_provider_connection(base_url: str, api_key: str, proxy: str) -> dict[s
 def _fetch_provider_models(base_url: str, api_key: str, proxy: str) -> dict[str, Any]:
     from curl_cffi import requests
 
-    url = f"{base_url.rstrip('/')}s"
+    url = _provider_models_url(base_url)
     headers = {"Accept": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -450,10 +461,24 @@ def _fetch_provider_models(base_url: str, api_key: str, proxy: str) -> dict[str,
     return {"ok": True, "status": response.status_code, "models": models, "error": None}
 
 
+def _normalize_provider_base_url(value: str) -> str:
+    """归一化 Provider base_url：去掉末尾斜杠及多余的 /v1 或 /v1/models。
+
+    运行时会自动拼接 /v1/chat/completions，因此存储的 base_url 不应带 /v1。
+    """
+    normalized = _clean_text(value).rstrip("/")
+    lowered = normalized.lower()
+    if lowered.endswith("/v1/models"):
+        normalized = normalized[: -len("/v1/models")]
+    elif lowered.endswith("/v1"):
+        normalized = normalized[: -len("/v1")]
+    return normalized.rstrip("/")
+
+
 def _provider_entry_from_request(body: ProviderRequest) -> dict[str, Any]:
     return {
         "name": _clean_text(body.name),
-        "base_url": _clean_text(body.base_url).rstrip("/"),
+        "base_url": _normalize_provider_base_url(body.base_url),
         "api_key": _clean_text(body.api_key),
         "models": [_clean_text(item) for item in body.models if _clean_text(item)],
         "image_models": [_clean_text(item) for item in body.image_models if _clean_text(item)],

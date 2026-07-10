@@ -321,7 +321,12 @@ const conversationBadges = computed<Record<string, StudioConversationBadge>>(() 
   return badges
 })
 const chatModelOptions = computed(() => uniqueStrings(['auto', ...chatModels.value]))
-const imageModelOptions = computed(() => uniqueStrings([imageForm.model, DEFAULT_IMAGE_MODEL, ...imageModels.value]))
+const imageModelOptions = computed(() => {
+  // 目录返回了生图模型时，只展示可用的（已禁用/删除的不再出现）；
+  // 目录为空（未加载或无生图模型）时，用当前选择与默认模型兜底，避免下拉为空。
+  if (imageModels.value.length) return uniqueStrings(imageModels.value)
+  return uniqueStrings([imageForm.model, DEFAULT_IMAGE_MODEL])
+})
 
 // 第三方生图模型（走 chat completions）不支持质量/比例/分辨率，仅数量有效，
 // 前端据此隐藏无效控件。集合来自各提供商配置的 image_models。
@@ -1530,12 +1535,29 @@ function ensureActiveConversation() {
   }
 }
 
+function reconcileModelSelection() {
+  // 目录加载完成后，校正本地保存的选中模型：
+  // 若当前选中的模型已被管理员禁用/删除（不在可用列表内），回退到有效默认值。
+  const chatOptions = chatModelOptions.value
+  if (chatOptions.length && !chatOptions.includes(chatModel.value)) {
+    chatModel.value = chatOptions.includes('auto') ? 'auto' : (chatOptions[0] || 'auto')
+  }
+
+  const imageOptions = imageModels.value
+  // 仅当目录返回了真实生图模型时才校正，避免空目录时误重置
+  if (imageOptions.length && !imageOptions.includes(imageForm.model)) {
+    imageForm.model = imageOptions.includes(DEFAULT_IMAGE_MODEL)
+      ? DEFAULT_IMAGE_MODEL
+      : imageOptions[0]
+  }
+}
+
 function initializeStudio() {
   ensureActiveConversation()
   if (!settingsStore.settings && !settingsStore.isLoading) {
     void settingsStore.loadSettings()
   }
-  void loadModelCatalog()
+  void loadModelCatalog().then(reconcileModelSelection)
   void loadRemoteConversations()
   void refreshImageTasks()
   scheduleScrollToBottom()
@@ -1543,6 +1565,8 @@ function initializeStudio() {
 
 function activateStudio() {
   isStudioActive = true
+  // 重新回到页面时刷新模型目录，捕捉离开期间被禁用/删除的模型
+  void loadModelCatalog(true).then(reconcileModelSelection)
   void refreshImageTasks(true)  // force=true to detect deletions on Gallery
   scheduleImagePoll()
   scheduleScrollToBottom()

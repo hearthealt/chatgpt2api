@@ -2531,7 +2531,7 @@ function closeCustomModelModal() {
   }
 }
 
-function submitCustomModel() {
+async function submitCustomModel() {
   const modelName = customModelForm.value.name.trim()
   if (!modelName) {
     toast.error('请输入模型名称')
@@ -2547,9 +2547,34 @@ function submitCustomModel() {
     return
   }
 
+  // 添加到自定义模型列表
   targetList.push(modelName)
+
+  // 立即添加到对应的选项列表中，使其在UI上显示
+  if (customModelForm.value.type === 'chat') {
+    if (!chatModelsOptions.value.includes(modelName)) {
+      chatModelsOptions.value.push(modelName)
+    }
+  } else {
+    if (!imageModelsOptions.value.includes(modelName)) {
+      imageModelsOptions.value.push(modelName)
+    }
+  }
+
+  // 同时添加到总列表
+  if (!allModelsOptions.value.includes(modelName)) {
+    allModelsOptions.value.push(modelName)
+  }
+
   closeCustomModelModal()
   toast.success(`已添加${customModelForm.value.type === 'chat' ? '对话' : '生图'}模型: ${modelName}`)
+
+  // 自动保存到后端，这样对话页面就能立即看到新模型
+  try {
+    await saveModelCatalog()
+  } catch (error: any) {
+    console.error('自动保存模型失败:', error)
+  }
 }
 
 function deleteModel(modelName: string) {

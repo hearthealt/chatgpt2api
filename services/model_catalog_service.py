@@ -126,6 +126,15 @@ def get_all_available_models() -> dict[str, Any]:
     chat_models = _unique(chat_models)
     image_models = _unique(image_models)
 
+    # 先对系统基础模型应用「已删除」过滤。
+    # provider 与自定义模型是用户主动配置的，不受 deleted_models 影响
+    #（删除 provider 模型请到提供商页面，删除自定义模型会直接从 custom 列表移除）。
+    catalog_settings = config.get_model_catalog_settings()
+    deleted_models = set(catalog_settings.get("deleted_models") or [])
+    if deleted_models:
+        chat_models = [m for m in chat_models if m not in deleted_models]
+        image_models = [m for m in image_models if m not in deleted_models]
+
     # 追加第三方 Provider 的模型（对话 + 生图）
     provider_chat_models = provider_service.list_chat_models()
     provider_image_models = provider_service.list_image_models()
@@ -135,19 +144,12 @@ def get_all_available_models() -> dict[str, Any]:
         image_models = _unique([*image_models, *provider_image_models])
 
     # 追加自定义模型（管理员手动添加的模型）
-    catalog_settings = config.get_model_catalog_settings()
     custom_chat_models = catalog_settings.get("custom_chat_models") or []
     custom_image_models = catalog_settings.get("custom_image_models") or []
     if custom_chat_models:
         chat_models = _unique([*chat_models, *custom_chat_models])
     if custom_image_models:
         image_models = _unique([*image_models, *custom_image_models])
-
-    # 排除已删除的模型
-    deleted_models = set(catalog_settings.get("deleted_models") or [])
-    if deleted_models:
-        chat_models = [m for m in chat_models if m not in deleted_models]
-        image_models = [m for m in image_models if m not in deleted_models]
 
     all_models = _unique([*chat_models, *image_models])
 
