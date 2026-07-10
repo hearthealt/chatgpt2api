@@ -980,6 +980,12 @@ def create_router(app_version: str) -> APIRouter:
         require_admin(authorization)
         return get_model_catalog()
 
+    @router.get("/api/model-catalog/all")
+    async def all_available_models(authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        from services.model_catalog_service import get_all_available_models
+        return get_all_available_models()
+
     @router.get("/api/admin/model-catalog")
     async def get_model_catalog_settings(authorization: str | None = Header(default=None)):
         require_admin(authorization)

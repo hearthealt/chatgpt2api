@@ -439,16 +439,28 @@ export const settingsApi = {
 
   catalog: () =>
     apiClient.get<never, { all_models: string[]; chat_models: string[]; image_models: string[] }>('/api/model-catalog'),
+
+  catalogAll: () =>
+    apiClient.get<never, { all_models: string[]; chat_models: string[]; image_models: string[] }>('/api/model-catalog/all'),
+}
+
+export interface ModelCatalogSettings {
+  enabled_models: string[]
+  disabled_models: string[]
+  deleted_models: string[]
+  default_user_models: string[]
+  custom_chat_models: string[]
+  custom_image_models: string[]
 }
 
 export const modelCatalogApi = {
   get: () =>
-    apiClient.get<never, { enabled_models: string[]; disabled_models: string[]; default_user_models: string[]; custom_chat_models: string[]; custom_image_models: string[] }>(
+    apiClient.get<never, ModelCatalogSettings>(
       '/api/admin/model-catalog'
     ),
-  save: (data: { enabled_models?: string[]; disabled_models?: string[]; default_user_models?: string[]; custom_chat_models?: string[]; custom_image_models?: string[] }) =>
+  save: (data: Partial<ModelCatalogSettings>) =>
     apiClient.post<
       typeof data,
-      { enabled_models: string[]; disabled_models: string[]; default_user_models: string[]; custom_chat_models: string[]; custom_image_models: string[] }
+      ModelCatalogSettings
     >('/api/admin/model-catalog', data),
 }

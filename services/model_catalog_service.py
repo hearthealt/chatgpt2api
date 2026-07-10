@@ -106,7 +106,8 @@ def _unique(values: list[str]) -> list[str]:
     return result
 
 
-def get_model_catalog() -> dict[str, Any]:
+def get_all_available_models() -> dict[str, Any]:
+    """获取所有可用模型（未应用白名单/黑名单过滤），用于管理界面的选项列表"""
     settings = config.get()
     configured_chat_models = _configured_chat_models(settings)
     configured_image_models = _configured_image_models(settings)
@@ -125,7 +126,7 @@ def get_model_catalog() -> dict[str, Any]:
     chat_models = _unique(chat_models)
     image_models = _unique(image_models)
 
-    # 追加第三方 Provider 的模型（对话 + 生图）。
+    # 追加第三方 Provider 的模型（对话 + 生图）
     provider_chat_models = provider_service.list_chat_models()
     provider_image_models = provider_service.list_image_models()
     if provider_chat_models:
@@ -142,6 +143,35 @@ def get_model_catalog() -> dict[str, Any]:
     if custom_image_models:
         image_models = _unique([*image_models, *custom_image_models])
 
+    # 排除已删除的模型
+    deleted_models = set(catalog_settings.get("deleted_models") or [])
+    if deleted_models:
+        chat_models = [m for m in chat_models if m not in deleted_models]
+        image_models = [m for m in image_models if m not in deleted_models]
+
+    all_models = _unique([*chat_models, *image_models])
+
+    return {
+        "object": "all_available_models",
+        "chat_models": chat_models,
+        "image_models": image_models,
+        "all_models": all_models,
+        "source": {
+            "chat": chat_source,
+            "image": image_source,
+        },
+    }
+
+
+def get_model_catalog() -> dict[str, Any]:
+    """获取经过白名单/黑名单过滤后的模型列表，用于实际调用"""
+    # 先获取所有可用模型
+    all_available = get_all_available_models()
+    chat_models = all_available["chat_models"]
+    image_models = all_available["image_models"]
+
+    # 应用白名单/黑名单过滤
+    catalog_settings = config.get_model_catalog_settings()
     enabled_models = catalog_settings.get("enabled_models") or []
     disabled_models = catalog_settings.get("disabled_models") or []
 
@@ -163,9 +193,6 @@ def get_model_catalog() -> dict[str, Any]:
         "chat_models": chat_models,
         "image_models": image_models,
         "all_models": all_models,
-        "source": {
-            "chat": chat_source,
-            "image": image_source,
-        },
+        "source": all_available["source"],
         "openai_models_endpoint": "s",
     }

@@ -914,36 +914,39 @@
         </div>
       </div>
 
-      <!-- 自定义模型 -->
-      <div v-if="modelCatalogForm.custom_chat_models.length > 0 || modelCatalogForm.custom_image_models.length > 0" class="rounded-xl border border-border bg-card">
+      <!-- 所有可用模型 -->
+      <div class="rounded-xl border border-border bg-card">
         <div class="border-b border-border bg-muted/30 px-4 py-2">
           <div class="flex items-center gap-2">
-            <div class="text-sm font-medium">自定义模型</div>
-            <HelpTip text="手动添加的模型。点击右上角「添加模型」按钮来添加新模型。" />
+            <div class="text-sm font-medium">所有可用模型</div>
+            <HelpTip text="列出所有可用的模型。点击右上角「添加模型」可手动添加新模型。自定义模型带有蓝色/紫色标签。可以删除任何模型（包括系统模型）。" />
           </div>
         </div>
         <div class="p-3 space-y-3">
-          <!-- 自定义对话模型 -->
-          <div v-if="modelCatalogForm.custom_chat_models.length > 0">
+          <!-- 对话模型 -->
+          <div v-if="chatModelsOptions.length > 0">
             <div class="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
-              <span>对话模型 ({{ modelCatalogForm.custom_chat_models.length }})</span>
+              <span>对话模型 ({{ chatModelsOptions.length }})</span>
             </div>
             <div class="flex flex-wrap gap-2">
               <div
-                v-for="model in modelCatalogForm.custom_chat_models"
-                :key="`custom-chat-${model}`"
-                class="inline-flex items-center gap-1.5 rounded-md border border-blue-500 bg-blue-50 px-2.5 py-1.5 text-xs font-medium"
+                v-for="model in chatModelsOptions"
+                :key="`all-chat-${model}`"
+                class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs"
+                :class="isCustomModel(model) ? 'border-blue-500 bg-blue-50 font-medium' : 'border-border bg-background'"
               >
                 <span class="font-mono">{{ model }}</span>
+                <span v-if="isCustomModel(model)" class="text-[10px] text-blue-600">自定义</span>
                 <button
                   type="button"
-                  class="ml-1 inline-flex size-4 items-center justify-center rounded hover:bg-blue-200"
-                  @click="removeCustomModel(model, 'chat')"
+                  class="ml-1 inline-flex size-4 items-center justify-center rounded hover:bg-rose-100"
+                  :title="`删除模型 ${model}`"
+                  @click="deleteModel(model)"
                 >
-                  <svg class="size-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg class="size-3 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -951,27 +954,30 @@
             </div>
           </div>
 
-          <!-- 自定义生图模型 -->
-          <div v-if="modelCatalogForm.custom_image_models.length > 0">
+          <!-- 生图模型 -->
+          <div v-if="imageModelsOptions.length > 0">
             <div class="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
-              <span>生图模型 ({{ modelCatalogForm.custom_image_models.length }})</span>
+              <span>生图模型 ({{ imageModelsOptions.length }})</span>
             </div>
             <div class="flex flex-wrap gap-2">
               <div
-                v-for="model in modelCatalogForm.custom_image_models"
-                :key="`custom-image-${model}`"
-                class="inline-flex items-center gap-1.5 rounded-md border border-purple-500 bg-purple-50 px-2.5 py-1.5 text-xs font-medium"
+                v-for="model in imageModelsOptions"
+                :key="`all-image-${model}`"
+                class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs"
+                :class="isCustomModel(model) ? 'border-purple-500 bg-purple-50 font-medium' : 'border-border bg-background'"
               >
                 <span class="font-mono">{{ model }}</span>
+                <span v-if="isCustomModel(model)" class="text-[10px] text-purple-600">自定义</span>
                 <button
                   type="button"
-                  class="ml-1 inline-flex size-4 items-center justify-center rounded hover:bg-purple-200"
-                  @click="removeCustomModel(model, 'image')"
+                  class="ml-1 inline-flex size-4 items-center justify-center rounded hover:bg-rose-100"
+                  :title="`删除模型 ${model}`"
+                  @click="deleteModel(model)"
                 >
-                  <svg class="size-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg class="size-3 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -1679,12 +1685,14 @@ const quotaForm = ref({
 const modelCatalogForm = ref<{
   enabled_models: string[]
   disabled_models: string[]
+  deleted_models: string[]
   default_user_models: string[]
   custom_chat_models: string[]
   custom_image_models: string[]
 }>({
   enabled_models: [],
   disabled_models: [],
+  deleted_models: [],
   default_user_models: [],
   custom_chat_models: [],
   custom_image_models: [],
@@ -2431,8 +2439,8 @@ async function saveQuotaDefaults() {
 async function loadModelCatalog() {
   if (modelCatalogLoaded.value) return
   try {
-    // 获取全量模型列表（所有可用模型）
-    const catalog = await settingsApi.catalog()
+    // 获取全量模型列表（所有可用模型，不受白名单/黑名单过滤）
+    const catalog = await settingsApi.catalogAll()
     allModelsOptions.value = catalog.all_models || []
     chatModelsOptions.value = catalog.chat_models || []
     imageModelsOptions.value = catalog.image_models || []
@@ -2442,6 +2450,7 @@ async function loadModelCatalog() {
     modelCatalogForm.value = {
       enabled_models: settings.enabled_models || [],
       disabled_models: settings.disabled_models || [],
+      deleted_models: settings.deleted_models || [],
       default_user_models: settings.default_user_models || [],
       custom_chat_models: settings.custom_chat_models || [],
       custom_image_models: settings.custom_image_models || [],
@@ -2458,6 +2467,7 @@ async function saveModelCatalog() {
     const res = await modelCatalogApi.save({
       enabled_models: modelCatalogForm.value.enabled_models,
       disabled_models: modelCatalogForm.value.disabled_models,
+      deleted_models: modelCatalogForm.value.deleted_models,
       default_user_models: modelCatalogForm.value.default_user_models,
       custom_chat_models: modelCatalogForm.value.custom_chat_models,
       custom_image_models: modelCatalogForm.value.custom_image_models,
@@ -2465,6 +2475,7 @@ async function saveModelCatalog() {
     modelCatalogForm.value = {
       enabled_models: res.enabled_models || [],
       disabled_models: res.disabled_models || [],
+      deleted_models: res.deleted_models || [],
       default_user_models: res.default_user_models || [],
       custom_chat_models: res.custom_chat_models || [],
       custom_image_models: res.custom_image_models || [],
@@ -2480,8 +2491,8 @@ async function saveModelCatalog() {
 async function refreshModelCatalog() {
   modelCatalogRefreshing.value = true
   try {
-    // 重新获取全量模型列表
-    const catalog = await settingsApi.catalog()
+    // 重新获取全量模型列表（不受白名单/黑名单过滤）
+    const catalog = await settingsApi.catalogAll()
     allModelsOptions.value = catalog.all_models || []
     chatModelsOptions.value = catalog.chat_models || []
     imageModelsOptions.value = catalog.image_models || []
@@ -2491,6 +2502,7 @@ async function refreshModelCatalog() {
     modelCatalogForm.value = {
       enabled_models: settings.enabled_models || [],
       disabled_models: settings.disabled_models || [],
+      deleted_models: settings.deleted_models || [],
       default_user_models: settings.default_user_models || [],
       custom_chat_models: settings.custom_chat_models || [],
       custom_image_models: settings.custom_image_models || [],
@@ -2538,6 +2550,54 @@ function submitCustomModel() {
   targetList.push(modelName)
   closeCustomModelModal()
   toast.success(`已添加${customModelForm.value.type === 'chat' ? '对话' : '生图'}模型: ${modelName}`)
+}
+
+function deleteModel(modelName: string) {
+  // 添加到删除列表
+  if (!modelCatalogForm.value.deleted_models.includes(modelName)) {
+    modelCatalogForm.value.deleted_models.push(modelName)
+  }
+
+  // 从自定义模型列表中移除
+  const chatIdx = modelCatalogForm.value.custom_chat_models.indexOf(modelName)
+  if (chatIdx >= 0) {
+    modelCatalogForm.value.custom_chat_models.splice(chatIdx, 1)
+  }
+  const imageIdx = modelCatalogForm.value.custom_image_models.indexOf(modelName)
+  if (imageIdx >= 0) {
+    modelCatalogForm.value.custom_image_models.splice(imageIdx, 1)
+  }
+
+  // 从启用/禁用列表中移除
+  const enabledIdx = modelCatalogForm.value.enabled_models.indexOf(modelName)
+  if (enabledIdx >= 0) {
+    modelCatalogForm.value.enabled_models.splice(enabledIdx, 1)
+  }
+  const disabledIdx = modelCatalogForm.value.disabled_models.indexOf(modelName)
+  if (disabledIdx >= 0) {
+    modelCatalogForm.value.disabled_models.splice(disabledIdx, 1)
+  }
+
+  // 从选项列表中移除（前端立即生效）
+  const allIdx = allModelsOptions.value.indexOf(modelName)
+  if (allIdx >= 0) {
+    allModelsOptions.value.splice(allIdx, 1)
+  }
+  const chatOptIdx = chatModelsOptions.value.indexOf(modelName)
+  if (chatOptIdx >= 0) {
+    chatModelsOptions.value.splice(chatOptIdx, 1)
+  }
+  const imageOptIdx = imageModelsOptions.value.indexOf(modelName)
+  if (imageOptIdx >= 0) {
+    imageModelsOptions.value.splice(imageOptIdx, 1)
+  }
+
+  toast.success(`已删除模型: ${modelName}`)
+}
+
+function isCustomModel(modelName: string): boolean {
+  return modelCatalogForm.value.custom_chat_models.includes(modelName) ||
+         modelCatalogForm.value.custom_image_models.includes(modelName)
 }
 
 function removeCustomModel(modelName: string, type: 'chat' | 'image') {
