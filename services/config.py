@@ -315,6 +315,12 @@ DEFAULT_USER_ACCESS: dict[str, object] = {
     "session_ttl_days": 7,
 }
 
+DEFAULT_MODEL_CATALOG: dict[str, object] = {
+    "enabled_models": [],
+    "disabled_models": [],
+    "default_user_models": [],
+}
+
 _QUOTA_PERIODS = {"daily", "monthly", "total"}
 
 
@@ -349,6 +355,16 @@ def _normalize_user_access_settings(value: object) -> dict[str, object]:
         "require_invite": _normalize_bool(source.get("require_invite"), False),
         "invite_code": str(source.get("invite_code") or "").strip(),
         "session_ttl_days": ttl_days,
+    }
+
+
+def _normalize_model_catalog_settings(value: object) -> dict[str, object]:
+    """规范化模型目录配置，coerce enabled_models/disabled_models/default_user_models 为 list[str]"""
+    source = value if isinstance(value, dict) else {}
+    return {
+        "enabled_models": _normalize_str_list(source.get("enabled_models")),
+        "disabled_models": _normalize_str_list(source.get("disabled_models")),
+        "default_user_models": _normalize_str_list(source.get("default_user_models")),
     }
 
 
@@ -820,6 +836,9 @@ class ConfigStore:
     def get_user_access_settings(self) -> dict[str, object]:
         return _normalize_user_access_settings(self.data.get("user_access"))
 
+    def get_model_catalog_settings(self) -> dict[str, object]:
+        return _normalize_model_catalog_settings(self.data.get("model_catalog"))
+
     def get_invite_codes(self) -> list[dict[str, object]]:
         self.reload_if_changed()
         return _normalize_invite_codes(self.data.get("invite_codes"))
@@ -847,6 +866,8 @@ class ConfigStore:
                 next_data["third_party_apps"] = _normalize_third_party_apps_settings(next_data.get("third_party_apps"))
             if "user_access" in next_data:
                 next_data["user_access"] = _normalize_user_access_settings(next_data.get("user_access"))
+            if "model_catalog" in next_data:
+                next_data["model_catalog"] = _normalize_model_catalog_settings(next_data.get("model_catalog"))
             if "invite_codes" in next_data:
                 next_data["invite_codes"] = _normalize_invite_codes(next_data.get("invite_codes"))
             if "providers" in next_data:

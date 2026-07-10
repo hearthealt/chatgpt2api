@@ -46,6 +46,7 @@ const emit = defineEmits<{
   (e: 'toggle-enabled'): void
   (e: 'refresh-token'): void
   (e: 'reset-state'): void
+  (e: 'list-models'): void
   (e: 'remove'): void
 }>()
 
@@ -64,6 +65,10 @@ const menuItems = computed<ActionMenuItem[]>(() => actionMenuGroups(
       key: 'reset-state',
       label: props.resetting ? '重置中...' : '重置状态',
       disabled: props.resetting,
+    },
+    {
+      key: 'list-models',
+      label: '查看可用模型',
     },
   ],
   [
@@ -85,6 +90,7 @@ function handleSelect(key: string) {
   if (key === 'toggle-enabled') emit('toggle-enabled')
   if (key === 'refresh-token') emit('refresh-token')
   if (key === 'reset-state') emit('reset-state')
+  if (key === 'list-models') emit('list-models')
   if (key === 'remove') emit('remove')
 }
 </script>

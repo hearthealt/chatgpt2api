@@ -223,6 +223,10 @@ export function useAccountsPage() {
   const showAccountGroupsModal = ref(false)
   const accountGroupSaving = ref(false)
   const editingAccountGroupId = ref('')
+  const showModelsModal = ref(false)
+  const modelsModalLoading = ref(false)
+  const modelsModalData = ref<any>(null)
+  const modelsModalAccountId = ref('')
   const selectedBindGroupId = ref('')
   const proxyTesting = ref(false)
   const proxyMode = ref<AccountProxyMode>('global')
@@ -1285,6 +1289,36 @@ export function useAccountsPage() {
     }
   }
 
+  async function listModels(accountId: string) {
+    const account = accounts.value.find(a => a.id === accountId)
+    if (!account?.access_token) {
+      toast.error('无法获取该账号的 access_token')
+      return
+    }
+
+    modelsModalAccountId.value = accountId
+    modelsModalData.value = null
+    showModelsModal.value = true
+    modelsModalLoading.value = true
+
+    try {
+      const response = await accountsApi.listModels(account.access_token)
+      modelsModalData.value = response
+      toast.success(`已加载账号 ${accountId} 的模型列表`)
+    } catch (error) {
+      toast.error(`获取模型列表失败：${normalizeErrorMessage(error)}`)
+      modelsModalData.value = { error: normalizeErrorMessage(error) }
+    } finally {
+      modelsModalLoading.value = false
+    }
+  }
+
+  function closeModelsModal() {
+    showModelsModal.value = false
+    modelsModalAccountId.value = ''
+    modelsModalData.value = null
+  }
+
   async function removeAccount(accountId: string) {
     const confirmed = await confirmDialog.ask({
       title: '删除账号',
@@ -1650,6 +1684,10 @@ export function useAccountsPage() {
     showAccountGroupsModal,
     accountGroupSaving,
     editingAccountGroupId,
+    showModelsModal,
+    modelsModalLoading,
+    modelsModalData,
+    modelsModalAccountId,
     accountGroupForm,
     accountGroupOptions,
     accountGroupProxyOptions,
@@ -1718,6 +1756,8 @@ export function useAccountsPage() {
     toggleEnabled,
     refreshToken,
     resetAccountState,
+    listModels,
+    closeModelsModal,
     removeAccount,
     runBulkAction,
     bindSelectedAccountsToGroup,

@@ -801,4 +801,11 @@ export const accountsApi = {
     snlm0e: '',
     model_ids: { ...EMPTY_MODEL_IDS },
   }),
+
+  listModels: async (accessToken: string) => {
+    const response = await apiClient.get<never, { access_token: string; models: any }>(
+      `/api/accounts/${encodeURIComponent(accessToken)}/models`
+    )
+    return response
+  },
 }

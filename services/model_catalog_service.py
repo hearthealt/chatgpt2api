@@ -133,6 +133,22 @@ def get_model_catalog() -> dict[str, Any]:
     if provider_image_models:
         image_models = _unique([*image_models, *provider_image_models])
 
+    # 应用管理员启用/禁用过滤
+    catalog_settings = config.get_model_catalog_settings()
+    enabled_models = catalog_settings.get("enabled_models") or []
+    disabled_models = catalog_settings.get("disabled_models") or []
+
+    if enabled_models:
+        # 白名单模式：只保留启用的
+        enabled_set = set(enabled_models)
+        chat_models = [m for m in chat_models if m in enabled_set]
+        image_models = [m for m in image_models if m in enabled_set]
+    elif disabled_models:
+        # 黑名单模式：排除禁用的
+        disabled_set = set(disabled_models)
+        chat_models = [m for m in chat_models if m not in disabled_set]
+        image_models = [m for m in image_models if m not in disabled_set]
+
     all_models = _unique([*chat_models, *image_models])
 
     return {

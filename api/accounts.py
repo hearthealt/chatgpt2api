@@ -18,6 +18,7 @@ from services.auth_service import auth_service
 from services.user_service import user_service
 from services.invite_service import invite_service
 from services.quota_service import build_user_stats, current_usage, default_quota_for_new_user, effective_limits, invalidate_usage_cache
+from services import openai_backend_api
 
 from api.support import (
     require_admin,
@@ -54,6 +55,7 @@ class AdminUserCreateRequest(BaseModel):
     password: str = ""
     role: str = "user"
     quota: AdminUserQuota | None = None
+    allowed_models: list[str] | None = None
 
 
 class AdminUserUpdateRequest(BaseModel):
@@ -61,6 +63,7 @@ class AdminUserUpdateRequest(BaseModel):
     enabled: bool | None = None
     role: str | None = None
     quota: AdminUserQuota | None = None
+    allowed_models: list[str] | None = None
 
 
 class AdminUserPasswordRequest(BaseModel):
@@ -497,7 +500,13 @@ def create_router() -> APIRouter:
         require_admin(authorization)
         quota = body.quota.model_dump(exclude_none=True) if body.quota else default_quota_for_new_user()
         try:
-            user = user_service.create_user(body.username, body.password, role=body.role or "user", quota=quota)
+            user = user_service.create_user(
+                body.username,
+                body.password,
+                role=body.role or "user",
+                quota=quota,
+                allowed_models=body.allowed_models,
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
         # 为该用户创建一把默认 API key
@@ -520,6 +529,8 @@ def create_router() -> APIRouter:
             updates["role"] = body.role
         if body.quota is not None:
             updates["quota"] = body.quota.model_dump(exclude_none=True)
+        if body.allowed_models is not None:
+            updates["allowed_models"] = body.allowed_models
         if not updates:
             raise HTTPException(status_code=400, detail={"error": "还没有检测到改动，请修改后再保存"})
         # 防止把最后一个启用的管理员禁用或降级为普通用户，导致无人能管理
@@ -886,6 +897,27 @@ def create_router() -> APIRouter:
             "errors": refresh_result.get("errors", []),
             "items": refresh_result.get("items", add_result.get("items", [])),
         }
+
+    @router.get("/api/accounts/{access_token}/models")
+    async def list_account_models(access_token: str, authorization: str | None = Header(default=None)):
+        """列出指定账号可用的模型列表。"""
+        require_admin(authorization)
+        account = account_service.get_account(access_token)
+        if not account:
+            raise HTTPException(status_code=404, detail={"error": "账号不存在"})
+
+        try:
+            backend = await run_in_threadpool(openai_backend_api.client, account)
+            models_response = await run_in_threadpool(backend.list_models)
+            return {
+                "access_token": access_token,
+                "models": models_response,
+            }
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502,
+                detail={"error": f"获取模型列表失败: {str(exc)}"}
+            ) from exc
 
     @router.get("/api/cpa/pools")
     async def list_cpa_pools(authorization: str | None = Header(default=None)):

@@ -198,6 +198,7 @@
                   @toggle-enabled="toggleEnabled(item)"
                   @refresh-token="refreshToken(item.id)"
                   @reset-state="resetAccountState(item.id)"
+                  @list-models="listModels(item.id)"
                   @remove="removeAccount(item.id)"
                 />
               </td>
@@ -280,6 +281,7 @@
             @toggle-enabled="toggleEnabled(item)"
             @refresh-token="refreshToken(item.id)"
             @reset-state="resetAccountState(item.id)"
+            @list-models="listModels(item.id)"
             @remove="removeAccount(item.id)"
           />
         </article>
@@ -723,6 +725,40 @@
           </div>
     </ModalShell>
 
+    <ModalShell :open="showModelsModal" max-width="48rem" :z-index="140">
+      <ModalHeader
+        title="账号可用模型"
+        :subtitle="`账号 ${modelsModalAccountId} 的可用模型列表`"
+        compact
+        @close="closeModelsModal"
+      />
+      <div class="max-h-[32rem] space-y-3 overflow-y-auto px-5 py-4">
+        <PageLoadingState v-if="modelsModalLoading" title="正在加载模型列表" description="请稍候..." />
+        <template v-else-if="modelsModalData">
+          <SurfaceBox v-if="modelsModalData.error" tone="danger" density="compact">
+            <p class="text-sm">{{ modelsModalData.error }}</p>
+          </SurfaceBox>
+          <template v-else-if="modelsModalData.models">
+            <div v-if="Array.isArray(modelsModalData.models.data)" class="space-y-2">
+              <SurfaceBox v-for="model in modelsModalData.models.data" :key="model.id" density="compact" class="text-sm">
+                <div class="font-medium">{{ model.id }}</div>
+                <div v-if="model.created" class="text-xs text-muted-foreground">
+                  创建时间: {{ new Date(model.created * 1000).toLocaleString() }}
+                </div>
+              </SurfaceBox>
+              <p v-if="modelsModalData.models.data.length === 0" class="text-sm text-muted-foreground">
+                未找到任何模型
+              </p>
+            </div>
+            <pre v-else class="overflow-x-auto rounded border border-border bg-muted/30 p-3 text-xs">{{ JSON.stringify(modelsModalData.models, null, 2) }}</pre>
+          </template>
+          <p v-else class="text-sm text-muted-foreground">
+            无模型数据
+          </p>
+        </template>
+      </div>
+    </ModalShell>
+
     <input ref="manualTokenFileInputRef" type="file" accept=".txt,text/plain" class="hidden" @change="handleManualTokenFileChange" />
     <input ref="cpaFileInputRef" type="file" accept=".json,application/json" multiple class="hidden" @change="handleCPAFileChange" />
   </div>
@@ -813,6 +849,10 @@ const {
   showAccountGroupsModal,
   accountGroupSaving,
   editingAccountGroupId,
+  showModelsModal,
+  modelsModalLoading,
+  modelsModalData,
+  modelsModalAccountId,
   accountGroupForm,
   accountGroupOptions,
   accountGroupProxyOptions,
@@ -879,6 +919,8 @@ const {
   toggleEnabled,
   refreshToken,
   resetAccountState,
+  listModels,
+  closeModelsModal,
   removeAccount,
   runBulkAction,
   bindSelectedAccountsToGroup,

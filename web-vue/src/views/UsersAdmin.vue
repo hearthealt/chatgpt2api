@@ -164,10 +164,10 @@
     </ModalShell>
 
     <!-- 编辑配额 -->
-    <ModalShell :open="userModal === 'quota'" max-width="34rem" :z-index="130" close-on-backdrop @close="closeUserModal">
+    <ModalShell :open="userModal === 'quota'" max-width="40rem" :z-index="130" close-on-backdrop @close="closeUserModal">
       <ModalHeader
-        :title="`编辑配额 · ${editingUser?.username || ''}`"
-        subtitle="-1 表示无限，0 表示使用系统默认额度。"
+        :title="`编辑配额与模型权限 · ${editingUser?.username || ''}`"
+        subtitle="-1 表示无限，0 表示使用系统默认额度。留空模型白名单则使用全局配置。"
         :bordered="false"
         @close="closeUserModal"
       />
@@ -177,6 +177,46 @@
         </FormField>
         <FormField label="生图次数上限">
           <Input v-model.number="quotaForm.image_limit" type="number" block />
+        </FormField>
+        <FormField label="可用模型白名单">
+          <div v-if="modelsLoading" class="text-sm text-muted-foreground">加载中...</div>
+          <div v-else-if="availableModels.length === 0" class="text-sm text-muted-foreground">暂无可用模型</div>
+          <div v-else class="space-y-2">
+            <div class="flex items-center gap-2 text-xs text-muted-foreground">
+              <button
+                type="button"
+                class="hover:text-foreground underline"
+                @click="quotaForm.allowed_models = [...availableModels]"
+              >
+                全选
+              </button>
+              <span>·</span>
+              <button
+                type="button"
+                class="hover:text-foreground underline"
+                @click="quotaForm.allowed_models = []"
+              >
+                清空
+              </button>
+              <span class="ml-auto">已选 {{ quotaForm.allowed_models.length }} / {{ availableModels.length }}</span>
+            </div>
+            <div class="space-y-1.5 max-h-60 overflow-y-auto border rounded-md p-3">
+              <div v-for="model in availableModels" :key="model" class="flex items-center">
+                <Checkbox
+                  :model-value="quotaForm.allowed_models.includes(model)"
+                  @update:model-value="(checked) => {
+                    if (checked) {
+                      quotaForm.allowed_models.push(model)
+                    } else {
+                      quotaForm.allowed_models = quotaForm.allowed_models.filter(m => m !== model)
+                    }
+                  }"
+                >
+                  <span class="text-sm">{{ model }}</span>
+                </Checkbox>
+              </div>
+            </div>
+          </div>
         </FormField>
       </ModalBody>
       <ModalFooter :bordered="false">
@@ -212,7 +252,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { Button, FormField, Input } from 'nanocat-ui'
+import { Button, Checkbox, FormField, Input } from 'nanocat-ui'
 import StateBlock from '@/components/ai/StateBlock.vue'
 import ModalShell from '@/components/ai/ModalShell.vue'
 import ModalHeader from '@/components/ai/ModalHeader.vue'
@@ -220,6 +260,7 @@ import ModalBody from '@/components/ai/ModalBody.vue'
 import ModalFooter from '@/components/ai/ModalFooter.vue'
 import { adminUsersApi } from '@/api/adminUsers'
 import { invitesApi, type InviteCode } from '@/api/invites'
+import { modelsApi } from '@/api/models'
 import { useToast } from '@/composables/useToast'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import type { AdminUser } from '@/types/api'
@@ -241,8 +282,11 @@ const newUserApiKey = ref('')
 const userModal = ref<'create' | 'quota' | 'password' | ''>('')
 const editingUser = ref<AdminUser | null>(null)
 const createForm = ref({ username: '', password: '' })
-const quotaForm = ref({ call_limit: 0, image_limit: 0 })
+const quotaForm = ref({ call_limit: 0, image_limit: 0, allowed_models: [] as string[] })
 const passwordForm = ref({ password: '' })
+
+const availableModels = ref<string[]>([])
+const modelsLoading = ref(false)
 
 const invites = ref<InviteCode[]>([])
 const invitesLoading = ref(false)
@@ -280,6 +324,21 @@ async function loadUsers() {
   }
 }
 
+async function loadAvailableModels() {
+  modelsLoading.value = true
+  try {
+    const catalog = await modelsApi.catalog()
+    availableModels.value = catalog.all_models || [
+      ...(catalog.chat_models || []),
+      ...(catalog.image_models || []),
+    ]
+  } catch (error: any) {
+    toast.error(error?.message || '加载模型列表失败')
+  } finally {
+    modelsLoading.value = false
+  }
+}
+
 function openCreateUser() {
   createForm.value = { username: '', password: '' }
   userModal.value = 'create'
@@ -311,8 +370,12 @@ function openEditQuota(item: AdminUser) {
   quotaForm.value = {
     call_limit: item.effective_quota?.call_limit ?? item.quota.call_limit ?? 0,
     image_limit: item.effective_quota?.image_limit ?? item.quota.image_limit ?? 0,
+    allowed_models: item.allowed_models || [],
   }
   userModal.value = 'quota'
+  if (availableModels.value.length === 0) {
+    loadAvailableModels()
+  }
 }
 
 async function submitEditQuota() {
@@ -326,6 +389,7 @@ async function submitEditQuota() {
         image_limit: Number(quotaForm.value.image_limit),
         period: item.quota.period || '',
       },
+      allowed_models: quotaForm.value.allowed_models.length > 0 ? quotaForm.value.allowed_models : undefined,
     })).items || []
     userModal.value = ''
     toast.success('配额已更新')

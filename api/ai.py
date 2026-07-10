@@ -10,7 +10,7 @@ from api.support import require_identity, resolve_image_base_url
 from services.content_filter import check_request, request_shape, request_text
 from services.editable_file_task_service import editable_file_task_service
 from services.log_service import LoggedCall
-from services.quota_service import check_quota
+from services.quota_service import check_quota, check_model_access
 from services.protocol import (
     anthropic_v1_messages,
     openai_v1_chat_complete,
@@ -85,9 +85,38 @@ def create_router() -> APIRouter:
 
     @router.get("/v1/models")
     async def list_models(authorization: str | None = Header(default=None)):
-        require_identity(authorization)
+        identity = require_identity(authorization)
         try:
-            return await run_in_threadpool(openai_v1_models.list_models)
+            result = await run_in_threadpool(openai_v1_models.list_models)
+
+            # 针对非 admin 用户，根据 allowed_models 过滤可见模型
+            from services.quota_service import resolve_user_for_identity
+            from services.config import config
+
+            if str(identity.get("role") or "").lower() != "admin":
+                user = resolve_user_for_identity(identity)
+                if user and str(user.get("role") or "").lower() != "admin":
+                    user_allowed = user.get("allowed_models")
+                    # 用户有白名单：只显示白名单内的模型
+                    if isinstance(user_allowed, list) and len(user_allowed) > 0:
+                        allowed_set = set(user_allowed)
+                        result["data"] = [m for m in result.get("data", []) if m.get("id") in allowed_set]
+                    else:
+                        # 用户无白名单：应用全局 model_catalog 过滤
+                        catalog_settings = config.get_model_catalog_settings()
+                        enabled = catalog_settings.get("enabled_models") or []
+                        disabled = catalog_settings.get("disabled_models") or []
+
+                        if isinstance(enabled, list) and len(enabled) > 0:
+                            # 全局有白名单：只显示白名单内的
+                            enabled_set = set(enabled)
+                            result["data"] = [m for m in result.get("data", []) if m.get("id") in enabled_set]
+                        elif isinstance(disabled, list) and len(disabled) > 0:
+                            # 全局有黑名单：排除黑名单中的
+                            disabled_set = set(disabled)
+                            result["data"] = [m for m in result.get("data", []) if m.get("id") not in disabled_set]
+
+            return result
         except Exception as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 
@@ -99,6 +128,7 @@ def create_router() -> APIRouter:
     ):
         identity = require_identity(authorization)
         await run_in_threadpool(check_quota, identity, kind="image")
+        await run_in_threadpool(check_model_access, identity, body.model)
         payload = body.model_dump(mode="python")
         payload["base_url"] = resolve_image_base_url(request)
         call = LoggedCall(identity, "/v1/images/generations", body.model, "文生图", request_text=body.prompt)
@@ -116,6 +146,7 @@ def create_router() -> APIRouter:
         payload, image_sources, mask_sources = await parse_image_edit_request(request)
         prompt = str(payload["prompt"])
         model = str(payload["model"])
+        await run_in_threadpool(check_model_access, identity, model)
         call = LoggedCall(identity, "/v1/images/edits", model, "图生图", request_text=prompt)
         call.attach_trace_metadata(payload)
         await filter_or_log(call, prompt)
@@ -134,6 +165,7 @@ def create_router() -> APIRouter:
         request_preview = request_text(payload.get("prompt"), payload.get("messages"))
         image_chat = is_image_chat_request(payload)
         await run_in_threadpool(check_quota, identity, kind="image" if image_chat else "call")
+        await run_in_threadpool(check_model_access, identity, model)
         call = LoggedCall(
             identity,
             "/v1/chat/completions",
@@ -152,6 +184,7 @@ def create_router() -> APIRouter:
         await run_in_threadpool(check_quota, identity, kind="call")
         payload = body.model_dump(mode="python")
         model = str(payload.get("model") or "auto")
+        await run_in_threadpool(check_model_access, identity, model)
         request_preview = request_text(payload.get("input"), payload.get("instructions"))
         call = LoggedCall(
             identity,
@@ -176,6 +209,7 @@ def create_router() -> APIRouter:
         await run_in_threadpool(check_quota, identity, kind="call")
         payload = body.model_dump(mode="python")
         model = str(payload.get("model") or "auto")
+        await run_in_threadpool(check_model_access, identity, model)
         request_preview = request_text(payload.get("system"), payload.get("messages"), payload.get("tools"))
         call = LoggedCall(identity, "/v1/messages", model, "Messages", request_text=request_preview)
         await filter_or_log(call, request_preview)

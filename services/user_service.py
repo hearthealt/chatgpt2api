@@ -57,6 +57,21 @@ def _normalize_quota(raw: object) -> dict[str, object]:
     }
 
 
+def _normalize_allowed_models(raw: object) -> list[str]:
+    """规范化允许使用的模型列表，coerce 为 list[str]，去重"""
+    if not isinstance(raw, list):
+        return []
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        text = str(item or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
 class UserService:
     def __init__(self, storage: StorageBackend):
         self.storage = storage
@@ -95,6 +110,7 @@ class UserService:
             "created_at": self._clean(raw.get("created_at")) or _now_iso(),
             "last_login_at": self._clean(raw.get("last_login_at")) or None,
             "quota": _normalize_quota(raw.get("quota")),
+            "allowed_models": _normalize_allowed_models(raw.get("allowed_models")),
         }
 
     def _load(self) -> list[dict[str, object]]:
@@ -122,6 +138,7 @@ class UserService:
             "created_at": item.get("created_at"),
             "last_login_at": item.get("last_login_at"),
             "quota": item.get("quota") or {"call_limit": 0, "image_limit": 0, "period": ""},
+            "allowed_models": item.get("allowed_models") or [],
         }
 
     def _validate_username_locked(self, username: str, *, exclude_id: str = "") -> str:
@@ -150,6 +167,7 @@ class UserService:
         *,
         role: UserRole = "user",
         quota: dict[str, object] | None = None,
+        allowed_models: list[str] | None = None,
     ) -> dict[str, object]:
         with self._lock:
             self._reload_locked()
@@ -167,6 +185,7 @@ class UserService:
                 "created_at": _now_iso(),
                 "last_login_at": None,
                 "quota": _normalize_quota(quota),
+                "allowed_models": _normalize_allowed_models(allowed_models),
             }
             self._items.append(item)
             self._save()
@@ -245,6 +264,8 @@ class UserService:
                     next_item["role"] = "admin" if role == "admin" else "user"
                 if "quota" in updates and updates.get("quota") is not None:
                     next_item["quota"] = _normalize_quota(updates.get("quota"))
+                if "allowed_models" in updates and updates.get("allowed_models") is not None:
+                    next_item["allowed_models"] = _normalize_allowed_models(updates.get("allowed_models"))
                 self._items[index] = next_item
                 self._save()
                 return self.public_user(next_item)

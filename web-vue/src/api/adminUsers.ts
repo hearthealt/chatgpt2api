@@ -16,6 +16,7 @@ export interface AdminUserCreatePayload {
   password: string
   role?: string
   quota?: AdminUserQuotaPayload
+  allowed_models?: string[]
 }
 
 export interface AdminUserUpdatePayload {
@@ -23,6 +24,7 @@ export interface AdminUserUpdatePayload {
   enabled?: boolean
   role?: string
   quota?: AdminUserQuotaPayload
+  allowed_models?: string[]
 }
 
 export interface AdminUserCreateResponse extends AdminUsersResponse {

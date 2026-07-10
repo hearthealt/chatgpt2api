@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Vite-7-646CFF?logo=vite&logoColor=white" />
   <img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white" />
 </p>
-<p align="center"><strong>当前稳定版本：v2.0.0</strong> | <a href="https://github.com/hearthealt/chatgpt2api/releases/tag/v2.0.0">发布说明</a> | <a href="https://github.com/hearthealt/chatgpt2api/releases">全部版本</a></p>
+<p align="center"><strong>当前稳定版本：v2.1.0</strong> | <a href="https://github.com/hearthealt/chatgpt2api/releases/tag/v2.1.0">发布说明</a> | <a href="https://github.com/hearthealt/chatgpt2api/releases">全部版本</a></p>
 
 ---
 

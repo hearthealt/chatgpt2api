@@ -253,6 +253,77 @@ def check_quota(identity: dict[str, object], *, kind: QuotaKind) -> None:
         )
 
 
+def check_model_access(identity: dict[str, object], model: str) -> None:
+    """在调用入口校验用户是否可使用该模型，不允许抛 403。
+
+    - admin 用户：不限制
+    - 无归属 identity（legacy admin/无主 key）：不限制
+    - 用户有 allowed_models 白名单：model 必须在其中
+    - 用户无 allowed_models 或为空：使用全局 model_catalog 的 enabled_models/disabled_models
+    """
+    # admin 角色跳过
+    if str(identity.get("role") or "").lower() == "admin":
+        return
+
+    user = resolve_user_for_identity(identity)
+    if user is None:
+        # 无归属 identity（legacy admin / 无主 key）
+        return
+    if str(user.get("role") or "").lower() == "admin":
+        return
+
+    # 获取用户的 allowed_models 白名单
+    user_allowed_models = user.get("allowed_models")
+    if isinstance(user_allowed_models, list) and len(user_allowed_models) > 0:
+        # 用户有自己的白名单，必须在其中
+        if model not in user_allowed_models:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": f"您无权使用模型 {model}。请联系管理员开通。",
+                    "code": "model_forbidden",
+                    "model": model,
+                },
+            )
+        return
+
+    # 用户无白名单或为空，使用全局 model_catalog 过滤
+    try:
+        catalog_settings = config.get_model_catalog_settings()
+    except Exception:
+        # 配置读取失败，默认允许
+        return
+
+    enabled_models = catalog_settings.get("enabled_models") or []
+    disabled_models = catalog_settings.get("disabled_models") or []
+
+    # 白名单优先（只有明确配置了白名单才启用）
+    if isinstance(enabled_models, list) and len(enabled_models) > 0:
+        if model not in enabled_models:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": f"模型 {model} 当前未启用。",
+                    "code": "model_forbidden",
+                    "model": model,
+                },
+            )
+        return
+
+    # 黑名单（只有明确配置了黑名单才启用）
+    if isinstance(disabled_models, list) and len(disabled_models) > 0 and model in disabled_models:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": f"模型 {model} 当前已禁用。",
+                "code": "model_forbidden",
+                "model": model,
+            },
+        )
+
+    # 没有任何限制配置，默认允许所有模型
+
+
 def _key_to_user_index() -> dict[str, dict[str, str]]:
     """构建 key_id -> {user_id, username} 映射（用户自身 id + 其名下 API key id）。"""
     users = user_service.list_users()

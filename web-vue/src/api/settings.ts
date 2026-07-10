@@ -436,4 +436,19 @@ export const settingsApi = {
 
   syncImageStorage: () =>
     apiClient.post<Record<string, never>, { result: ImageStorageSyncResult }>('/api/image-storage/sync', {}),
+
+  catalog: () =>
+    apiClient.get<never, { all_models: string[]; chat_models: string[]; image_models: string[] }>('/api/model-catalog'),
+}
+
+export const modelCatalogApi = {
+  get: () =>
+    apiClient.get<never, { enabled_models: string[]; disabled_models: string[]; default_user_models: string[] }>(
+      '/api/admin/model-catalog'
+    ),
+  save: (data: { enabled_models?: string[]; disabled_models?: string[]; default_user_models?: string[] }) =>
+    apiClient.post<
+      typeof data,
+      { enabled_models: string[]; disabled_models: string[]; default_user_models: string[] }
+    >('/api/admin/model-catalog', data),
 }

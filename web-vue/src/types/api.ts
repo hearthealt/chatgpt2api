@@ -479,6 +479,7 @@ export interface AdminUser {
   quota: { call_limit: number; image_limit: number; period: string }
   effective_quota?: { call_limit: number; image_limit: number }
   usage?: { calls: number; images: number }
+  allowed_models: string[]
 }
 
 export interface AuthStatusResponse {

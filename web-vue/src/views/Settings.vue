@@ -890,10 +890,251 @@
             <Input v-model.number="quotaForm.default_image_limit" type="number" size="md" block />
           </FormField>
         </div>
-        <div class="mt-3">
-          <Button size="sm" variant="primary" :disabled="quotaSaving" @click="saveQuotaDefaults">
-            {{ quotaSaving ? '保存中...' : '保存用户设置' }}
-          </Button>
+      </div>
+    </PagePanel>
+
+    <PagePanel v-if="localSettings && activeSettingsTab === 'models'" class="space-y-4">
+      <div>
+        <p class="ui-section-title">模型管理</p>
+        <p class="mt-1 text-xs text-muted-foreground">
+          控制全局可用的模型列表，以及新用户的默认可用模型白名单。
+        </p>
+      </div>
+
+      <!-- 启用模型（白名单） -->
+      <div class="rounded-xl border border-border bg-card">
+        <div class="border-b border-border bg-muted/30 px-4 py-2">
+          <div class="flex items-center gap-2">
+            <div class="text-sm font-medium">启用模型（白名单）</div>
+            <HelpTip text="勾选需要启用的模型。留空则所有模型都可用（除非在禁用列表中）。" />
+          </div>
+        </div>
+        <div class="p-3 space-y-3">
+          <!-- 对话模型 -->
+          <div v-if="chatModelsOptions.length > 0">
+            <div class="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              <span>对话模型 ({{ chatModelsOptions.length }})</span>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <label
+                v-for="model in chatModelsOptions"
+                :key="`enabled-chat-${model}`"
+                class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs transition-colors hover:border-primary/50 hover:bg-primary/5"
+                :class="{ 'border-primary bg-primary/10 font-medium': modelCatalogForm.enabled_models.includes(model) }"
+              >
+                <input
+                  type="checkbox"
+                  :checked="modelCatalogForm.enabled_models.includes(model)"
+                  @change="(e) => {
+                    const checked = (e.target as HTMLInputElement).checked
+                    if (checked) {
+                      modelCatalogForm.enabled_models.push(model)
+                    } else {
+                      const idx = modelCatalogForm.enabled_models.indexOf(model)
+                      if (idx >= 0) modelCatalogForm.enabled_models.splice(idx, 1)
+                    }
+                  }"
+                  class="size-3.5 shrink-0 rounded border-border text-primary"
+                />
+                <span class="font-mono">{{ model }}</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- 生图模型 -->
+          <div v-if="imageModelsOptions.length > 0">
+            <div class="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span>生图模型 ({{ imageModelsOptions.length }})</span>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <label
+                v-for="model in imageModelsOptions"
+                :key="`enabled-image-${model}`"
+                class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs transition-colors hover:border-primary/50 hover:bg-primary/5"
+                :class="{ 'border-primary bg-primary/10 font-medium': modelCatalogForm.enabled_models.includes(model) }"
+              >
+                <input
+                  type="checkbox"
+                  :checked="modelCatalogForm.enabled_models.includes(model)"
+                  @change="(e) => {
+                    const checked = (e.target as HTMLInputElement).checked
+                    if (checked) {
+                      modelCatalogForm.enabled_models.push(model)
+                    } else {
+                      const idx = modelCatalogForm.enabled_models.indexOf(model)
+                      if (idx >= 0) modelCatalogForm.enabled_models.splice(idx, 1)
+                    }
+                  }"
+                  class="size-3.5 shrink-0 rounded border-border text-primary"
+                />
+                <span class="font-mono">{{ model }}</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 禁用模型（黑名单） -->
+      <div class="rounded-xl border border-border bg-card">
+        <div class="border-b border-border bg-muted/30 px-4 py-2">
+          <div class="flex items-center gap-2">
+            <div class="text-sm font-medium">禁用模型（黑名单）</div>
+            <HelpTip text="勾选需要禁用的模型。优先级低于启用列表。" />
+          </div>
+        </div>
+        <div class="p-3 space-y-3">
+          <!-- 对话模型 -->
+          <div v-if="chatModelsOptions.length > 0">
+            <div class="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              <span>对话模型 ({{ chatModelsOptions.length }})</span>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <label
+                v-for="model in chatModelsOptions"
+                :key="`disabled-chat-${model}`"
+                class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs transition-colors hover:border-rose-500/50 hover:bg-rose-50/50"
+                :class="{ 'border-rose-500 bg-rose-50 font-medium': modelCatalogForm.disabled_models.includes(model) }"
+              >
+                <input
+                  type="checkbox"
+                  :checked="modelCatalogForm.disabled_models.includes(model)"
+                  @change="(e) => {
+                    const checked = (e.target as HTMLInputElement).checked
+                    if (checked) {
+                      modelCatalogForm.disabled_models.push(model)
+                    } else {
+                      const idx = modelCatalogForm.disabled_models.indexOf(model)
+                      if (idx >= 0) modelCatalogForm.disabled_models.splice(idx, 1)
+                    }
+                  }"
+                  class="size-3.5 shrink-0 rounded border-border text-rose-600"
+                />
+                <span class="font-mono">{{ model }}</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- 生图模型 -->
+          <div v-if="imageModelsOptions.length > 0">
+            <div class="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span>生图模型 ({{ imageModelsOptions.length }})</span>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <label
+                v-for="model in imageModelsOptions"
+                :key="`disabled-image-${model}`"
+                class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs transition-colors hover:border-rose-500/50 hover:bg-rose-50/50"
+                :class="{ 'border-rose-500 bg-rose-50 font-medium': modelCatalogForm.disabled_models.includes(model) }"
+              >
+                <input
+                  type="checkbox"
+                  :checked="modelCatalogForm.disabled_models.includes(model)"
+                  @change="(e) => {
+                    const checked = (e.target as HTMLInputElement).checked
+                    if (checked) {
+                      modelCatalogForm.disabled_models.push(model)
+                    } else {
+                      const idx = modelCatalogForm.disabled_models.indexOf(model)
+                      if (idx >= 0) modelCatalogForm.disabled_models.splice(idx, 1)
+                    }
+                  }"
+                  class="size-3.5 shrink-0 rounded border-border text-rose-600"
+                />
+                <span class="font-mono">{{ model }}</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 新用户默认模型 -->
+      <div class="rounded-xl border border-border bg-card">
+        <div class="border-b border-border bg-muted/30 px-4 py-2">
+          <div class="flex items-center gap-2">
+            <div class="text-sm font-medium">新用户默认可用模型</div>
+            <HelpTip text="新用户（未单独配置模型白名单时）默认可使用的模型。留空=不限制。" />
+          </div>
+        </div>
+        <div class="p-3 space-y-3">
+          <!-- 对话模型 -->
+          <div v-if="chatModelsOptions.length > 0">
+            <div class="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              <span>对话模型 ({{ chatModelsOptions.length }})</span>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <label
+                v-for="model in chatModelsOptions"
+                :key="`default-chat-${model}`"
+                class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs transition-colors hover:border-emerald-500/50 hover:bg-emerald-50/50"
+                :class="{ 'border-emerald-500 bg-emerald-50 font-medium': modelCatalogForm.default_user_models.includes(model) }"
+              >
+                <input
+                  type="checkbox"
+                  :checked="modelCatalogForm.default_user_models.includes(model)"
+                  @change="(e) => {
+                    const checked = (e.target as HTMLInputElement).checked
+                    if (checked) {
+                      modelCatalogForm.default_user_models.push(model)
+                    } else {
+                      const idx = modelCatalogForm.default_user_models.indexOf(model)
+                      if (idx >= 0) modelCatalogForm.default_user_models.splice(idx, 1)
+                    }
+                  }"
+                  class="size-3.5 shrink-0 rounded border-border text-emerald-600"
+                />
+                <span class="font-mono">{{ model }}</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- 生图模型 -->
+          <div v-if="imageModelsOptions.length > 0">
+            <div class="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span>生图模型 ({{ imageModelsOptions.length }})</span>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <label
+                v-for="model in imageModelsOptions"
+                :key="`default-image-${model}`"
+                class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs transition-colors hover:border-emerald-500/50 hover:bg-emerald-50/50"
+                :class="{ 'border-emerald-500 bg-emerald-50 font-medium': modelCatalogForm.default_user_models.includes(model) }"
+              >
+                <input
+                  type="checkbox"
+                  :checked="modelCatalogForm.default_user_models.includes(model)"
+                  @change="(e) => {
+                    const checked = (e.target as HTMLInputElement).checked
+                    if (checked) {
+                      modelCatalogForm.default_user_models.push(model)
+                    } else {
+                      const idx = modelCatalogForm.default_user_models.indexOf(model)
+                      if (idx >= 0) modelCatalogForm.default_user_models.splice(idx, 1)
+                    }
+                  }"
+                  class="size-3.5 shrink-0 rounded border-border text-emerald-600"
+                />
+                <span class="font-mono">{{ model }}</span>
+              </label>
+            </div>
+          </div>
         </div>
       </div>
     </PagePanel>
@@ -1219,6 +1460,7 @@ import {
   prepareSettingsForSave,
   prepareSettingsPatch,
   settingsApi,
+  modelCatalogApi,
   type BackupItem,
   type BackupState,
   type BackupTestResult,
@@ -1307,6 +1549,20 @@ const quotaForm = ref({
   default_call_limit: 1000,
   default_image_limit: 200,
 })
+const modelCatalogForm = ref<{
+  enabled_models: string[]
+  disabled_models: string[]
+  default_user_models: string[]
+}>({
+  enabled_models: [],
+  disabled_models: [],
+  default_user_models: [],
+})
+const allModelsOptions = ref<string[]>([])
+const chatModelsOptions = ref<string[]>([])
+const imageModelsOptions = ref<string[]>([])
+const modelCatalogLoaded = ref(false)
+const modelCatalogSaving = ref(false)
 const cpaForm = ref({
   name: '',
   base_url: '',
@@ -1335,6 +1591,7 @@ const settingsTabs = [
   { value: 'backup', label: 'R2 备份' },
   { value: 'keys', label: '用户密钥' },
   { value: 'users', label: '用户设置' },
+  { value: 'models', label: '模型管理' },
   { value: 'api-docs', label: '接口接入' },
   { value: 'canvas', label: '画布入口' },
   { value: 'cpa', label: 'CPA' },
@@ -2034,6 +2291,49 @@ async function saveQuotaDefaults() {
   }
 }
 
+async function loadModelCatalog() {
+  if (modelCatalogLoaded.value) return
+  try {
+    // 获取全量模型列表（所有可用模型）
+    const catalog = await settingsApi.catalog()
+    allModelsOptions.value = catalog.all_models || []
+    chatModelsOptions.value = catalog.chat_models || []
+    imageModelsOptions.value = catalog.image_models || []
+
+    // 获取当前启用/禁用配置
+    const settings = await modelCatalogApi.get()
+    modelCatalogForm.value = {
+      enabled_models: settings.enabled_models || [],
+      disabled_models: settings.disabled_models || [],
+      default_user_models: settings.default_user_models || [],
+    }
+    modelCatalogLoaded.value = true
+  } catch (error: any) {
+    toast.error(error?.message || '加载模型设置失败')
+  }
+}
+
+async function saveModelCatalog() {
+  modelCatalogSaving.value = true
+  try {
+    const res = await modelCatalogApi.save({
+      enabled_models: modelCatalogForm.value.enabled_models,
+      disabled_models: modelCatalogForm.value.disabled_models,
+      default_user_models: modelCatalogForm.value.default_user_models,
+    })
+    modelCatalogForm.value = {
+      enabled_models: res.enabled_models || [],
+      disabled_models: res.disabled_models || [],
+      default_user_models: res.default_user_models || [],
+    }
+    toast.success('模型设置已保存')
+  } catch (error: any) {
+    toast.error(error.message || '保存模型设置失败')
+  } finally {
+    modelCatalogSaving.value = false
+  }
+}
+
 async function persistSettings(showToast = false) {
   if (!localSettings.value) return null
   const payload = prepareSettingsPatch(localSettings.value, savedSettingsBaseline.value)
@@ -2534,6 +2834,10 @@ async function loadActiveSettingsTabData(force = false) {
     await loadUserSettings()
     return
   }
+  if (tab === 'models' && (force || !modelCatalogLoaded.value)) {
+    await loadModelCatalog()
+    return
+  }
   if (tab === 'backup' && (force || !backupsLoaded.value)) {
     await loadBackups()
     return
@@ -2582,9 +2886,13 @@ watch(activeSettingsTab, () => {
 })
 
 const handleSave = async () => {
-  // 「用户设置」是独立面板，用专用保存逻辑，避免误以为顶部按钮没生效
+  // 「用户设置」和「模型管理」是独立面板，用专用保存逻辑
   if (activeSettingsTab.value === 'users') {
     await saveQuotaDefaults()
+    return
+  }
+  if (activeSettingsTab.value === 'models') {
+    await saveModelCatalog()
     return
   }
   if (!localSettings.value) return

@@ -103,6 +103,7 @@ SETTINGS_UPDATE_KEYS = {
     "image_generation",
     "quota_limits",
     "user_access",
+    "model_catalog",
     "runtime_capacity",
     "image_storage",
     "backup",
@@ -978,6 +979,21 @@ def create_router(app_version: str) -> APIRouter:
     async def model_catalog(authorization: str | None = Header(default=None)):
         require_admin(authorization)
         return get_model_catalog()
+
+    @router.get("/api/admin/model-catalog")
+    async def get_model_catalog_settings(authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        return config.get_model_catalog_settings()
+
+    @router.post("/api/admin/model-catalog")
+    async def update_model_catalog_settings(body: dict, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        # drop None fields, merge with current, update
+        updates = {k: v for k, v in body.items() if v is not None}
+        current = dict(config.get_model_catalog_settings())
+        current.update(updates)
+        config.update({"model_catalog": current})
+        return config.get_model_catalog_settings()
 
     @router.get("/api/providers")
     async def list_providers(authorization: str | None = Header(default=None)):
