@@ -127,7 +127,7 @@
                       block
                     />
                   </div>
-                  <div class="studio-size-section">
+                  <div v-if="!isThirdPartyImageModel" class="studio-size-section">
                     <div class="studio-size-label">质量</div>
                     <div class="studio-choice-grid is-quality">
                       <button
@@ -157,7 +157,7 @@
                       </button>
                     </div>
                   </div>
-                  <div class="studio-size-section">
+                  <div v-if="!isThirdPartyImageModel" class="studio-size-section">
                     <div class="studio-size-label">比例</div>
                     <div class="studio-choice-grid is-ratio">
                       <button
@@ -172,7 +172,7 @@
                       </button>
                     </div>
                   </div>
-                  <div class="studio-size-section">
+                  <div v-if="!isThirdPartyImageModel" class="studio-size-section">
                     <div class="studio-size-label">分辨率</div>
                     <div class="studio-choice-grid is-resolution">
                       <button
@@ -266,6 +266,7 @@ const props = defineProps<{
   imageForm: StudioImageForm
   chatModelOptions: string[]
   imageModelOptions: string[]
+  isThirdPartyImageModel?: boolean
   references: StudioReference[]
   isSending: boolean
   isStreaming: boolean
@@ -381,8 +382,11 @@ const resolutionOptions = computed(() => {
 })
 const selectedSizeDetailLabel = computed(() => formatImageSizeLabel(props.imageForm.size))
 const imageSummaryLabel = computed(() => {
-  const count = props.imageForm.n > 1 ? ` · ${props.imageForm.n} 张` : ''
-  return `${formatImageSizeLabel(props.imageForm.size)}${count}`
+  const count = props.imageForm.n > 1 ? `${props.imageForm.n} 张` : '1 张'
+  // 第三方生图不支持尺寸/质量，摘要只显示数量，避免展示无效的分辨率。
+  if (props.isThirdPartyImageModel) return count
+  const suffix = props.imageForm.n > 1 ? ` · ${count}` : ''
+  return `${formatImageSizeLabel(props.imageForm.size)}${suffix}`
 })
 const imagePlaceholder = computed(() => props.references.length ? '描述你想如何修改参考图' : '输入你想生成的画面，也可以粘贴或拖入参考图')
 const placeholderText = computed(() => {

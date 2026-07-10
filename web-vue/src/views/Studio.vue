@@ -97,6 +97,7 @@
         :image-form="imageForm"
         :chat-model-options="chatModelOptions"
         :image-model-options="imageModelOptions"
+        :is-third-party-image-model="isThirdPartyImageModel"
         :references="referencePreviews"
         :is-sending="isSending"
         :is-streaming="isStreaming"
@@ -321,6 +322,20 @@ const conversationBadges = computed<Record<string, StudioConversationBadge>>(() 
 })
 const chatModelOptions = computed(() => uniqueStrings(['auto', ...chatModels.value]))
 const imageModelOptions = computed(() => uniqueStrings([imageForm.model, DEFAULT_IMAGE_MODEL, ...imageModels.value]))
+
+// 第三方生图模型（走 chat completions）不支持质量/比例/分辨率，仅数量有效，
+// 前端据此隐藏无效控件。集合来自各提供商配置的 image_models。
+const thirdPartyImageModels = computed(() => {
+  const set = new Set<string>()
+  for (const provider of settingsStore.settings?.providers ?? []) {
+    for (const model of provider.image_models ?? []) {
+      const value = String(model || '').trim()
+      if (value) set.add(value)
+    }
+  }
+  return set
+})
+const isThirdPartyImageModel = computed(() => thirdPartyImageModels.value.has(imageForm.model))
 
 watch(composeMode, (mode) => setStringPreference(preferenceKeys.studioActiveMode, mode))
 watch(chatModel, (model) => setStringPreference(preferenceKeys.studioChatModel, model || 'auto'))

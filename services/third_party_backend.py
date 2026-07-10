@@ -63,6 +63,23 @@ def extract_image_urls_from_content(content: str) -> list[str]:
 _IMAGE_DOWNLOAD_TIMEOUT_SECS = 30
 
 
+def _normalize_third_party_effort(value: object) -> str:
+    """收敛 reasoning_effort 到第三方 OpenAI 兼容上游接受的档位。
+
+    上游（如 grok）认 low/medium/high/xhigh；内部/前端"超高"发出的是 extended，
+    上游不识别会判 400，这里映射成上游对应的"超高"档 xhigh。
+    其余无法识别的值返回空串（不透传）。
+    """
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return ""
+    if normalized in {"low", "medium", "high", "xhigh"}:
+        return normalized
+    if normalized == "extended":
+        return "xhigh"
+    return ""
+
+
 def _decode_data_url(source: str) -> bytes | None:
     """解析 data:image/...;base64,xxx，返回图片字节。"""
     try:
@@ -147,10 +164,15 @@ class ThirdPartyBackend:
     def _payload(self, messages: list[dict[str, Any]], model: str, stream: bool, **kwargs: Any) -> dict[str, Any]:
         payload: dict[str, Any] = {"model": model, "messages": messages, "stream": stream}
         # 透传 OpenAI 兼容的可选参数。
-        for key in ("temperature", "top_p", "max_tokens", "presence_penalty", "frequency_penalty", "stop", "n", "reasoning_effort"):
+        for key in ("temperature", "top_p", "max_tokens", "presence_penalty", "frequency_penalty", "stop", "n"):
             value = kwargs.get(key)
             if value is not None:
                 payload[key] = value
+        # reasoning_effort 单独处理：前端"超高"发出的是 extended，第三方上游（grok）
+        # 不识别会判 400，这里映射成上游的 xhigh；其余合法档位原样透传。
+        effort = _normalize_third_party_effort(kwargs.get("reasoning_effort"))
+        if effort:
+            payload["reasoning_effort"] = effort
         return payload
 
     def _post_with_retry(self, context: str, payload: dict[str, Any], *, stream: bool):
