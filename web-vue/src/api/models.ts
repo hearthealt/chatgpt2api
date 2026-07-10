@@ -28,5 +28,5 @@ export interface ModelCatalogResponse {
 
 export const modelsApi = {
   catalog: () => apiClient.get<never, ModelCatalogResponse>('/api/model-catalog'),
-  list: () => apiClient.get<never, ModelListResponse>('/v1/models'),
+  list: () => apiClient.get<never, ModelListResponse>('s'),
 }

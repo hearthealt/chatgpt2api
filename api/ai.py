@@ -83,7 +83,7 @@ async def filter_or_log(call: LoggedCall, text: str) -> None:
 def create_router() -> APIRouter:
     router = APIRouter()
 
-    @router.get("/v1/models")
+    @router.get("s")
     async def list_models(authorization: str | None = Header(default=None)):
         identity = require_identity(authorization)
         try:

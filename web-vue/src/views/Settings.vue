@@ -894,11 +894,91 @@
     </PagePanel>
 
     <PagePanel v-if="localSettings && activeSettingsTab === 'models'" class="space-y-4">
-      <div>
-        <p class="ui-section-title">模型管理</p>
-        <p class="mt-1 text-xs text-muted-foreground">
-          控制全局可用的模型列表，以及新用户的默认可用模型白名单。
-        </p>
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p class="ui-section-title">模型管理</p>
+          <p class="mt-1 text-xs text-muted-foreground">
+            控制全局可用的模型列表，以及新用户的默认可用模型白名单。
+          </p>
+        </div>
+        <div class="flex gap-2">
+          <Button size="sm" variant="primary" @click="openCustomModelModal">
+            <svg class="mr-1 size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            添加模型
+          </Button>
+          <Button size="sm" variant="outline" :disabled="modelCatalogRefreshing" @click="refreshModelCatalog">
+            {{ modelCatalogRefreshing ? '刷新中...' : '刷新模型' }}
+          </Button>
+        </div>
+      </div>
+
+      <!-- 自定义模型 -->
+      <div v-if="modelCatalogForm.custom_chat_models.length > 0 || modelCatalogForm.custom_image_models.length > 0" class="rounded-xl border border-border bg-card">
+        <div class="border-b border-border bg-muted/30 px-4 py-2">
+          <div class="flex items-center gap-2">
+            <div class="text-sm font-medium">自定义模型</div>
+            <HelpTip text="手动添加的模型。点击右上角「添加模型」按钮来添加新模型。" />
+          </div>
+        </div>
+        <div class="p-3 space-y-3">
+          <!-- 自定义对话模型 -->
+          <div v-if="modelCatalogForm.custom_chat_models.length > 0">
+            <div class="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              <span>对话模型 ({{ modelCatalogForm.custom_chat_models.length }})</span>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <div
+                v-for="model in modelCatalogForm.custom_chat_models"
+                :key="`custom-chat-${model}`"
+                class="inline-flex items-center gap-1.5 rounded-md border border-blue-500 bg-blue-50 px-2.5 py-1.5 text-xs font-medium"
+              >
+                <span class="font-mono">{{ model }}</span>
+                <button
+                  type="button"
+                  class="ml-1 inline-flex size-4 items-center justify-center rounded hover:bg-blue-200"
+                  @click="removeCustomModel(model, 'chat')"
+                >
+                  <svg class="size-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 自定义生图模型 -->
+          <div v-if="modelCatalogForm.custom_image_models.length > 0">
+            <div class="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span>生图模型 ({{ modelCatalogForm.custom_image_models.length }})</span>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <div
+                v-for="model in modelCatalogForm.custom_image_models"
+                :key="`custom-image-${model}`"
+                class="inline-flex items-center gap-1.5 rounded-md border border-purple-500 bg-purple-50 px-2.5 py-1.5 text-xs font-medium"
+              >
+                <span class="font-mono">{{ model }}</span>
+                <button
+                  type="button"
+                  class="ml-1 inline-flex size-4 items-center justify-center rounded hover:bg-purple-200"
+                  @click="removeCustomModel(model, 'image')"
+                >
+                  <svg class="size-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- 启用模型（白名单） -->
@@ -1445,6 +1525,53 @@
         />
       </ModalBody>
     </ModalShell>
+
+    <ModalShell
+      :open="customModelModal"
+      max-width="32rem"
+      :z-index="130"
+      close-on-backdrop
+      @close="closeCustomModelModal"
+    >
+      <ModalHeader
+        title="添加自定义模型"
+        subtitle="添加新发布的模型，系统将自动识别并支持。"
+        :bordered="false"
+        @close="closeCustomModelModal"
+      />
+      <ModalBody class="space-y-3">
+        <FormField label="模型名称" required>
+          <Input
+            v-model.trim="customModelForm.name"
+            block
+            placeholder="例如: gpt-5.5, dall-e-4"
+            @keypress.enter="submitCustomModel"
+          />
+        </FormField>
+        <FormField label="模型类型" required>
+          <div class="flex gap-3">
+            <label class="flex flex-1 cursor-pointer items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 transition-colors hover:border-primary/50" :class="{ 'border-primary bg-primary/5': customModelForm.type === 'chat' }">
+              <input v-model="customModelForm.type" type="radio" value="chat" class="size-4" />
+              <div class="flex-1">
+                <div class="text-sm font-medium">对话模型</div>
+                <div class="text-xs text-muted-foreground">用于文本生成和对话</div>
+              </div>
+            </label>
+            <label class="flex flex-1 cursor-pointer items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 transition-colors hover:border-primary/50" :class="{ 'border-primary bg-primary/5': customModelForm.type === 'image' }">
+              <input v-model="customModelForm.type" type="radio" value="image" class="size-4" />
+              <div class="flex-1">
+                <div class="text-sm font-medium">生图模型</div>
+                <div class="text-xs text-muted-foreground">用于图像生成</div>
+              </div>
+            </label>
+          </div>
+        </FormField>
+      </ModalBody>
+      <ModalFooter :bordered="false">
+        <Button size="sm" variant="outline" @click="closeCustomModelModal">取消</Button>
+        <Button size="sm" variant="primary" @click="submitCustomModel">确认添加</Button>
+      </ModalFooter>
+    </ModalShell>
   </div>
 </template>
 
@@ -1553,16 +1680,26 @@ const modelCatalogForm = ref<{
   enabled_models: string[]
   disabled_models: string[]
   default_user_models: string[]
+  custom_chat_models: string[]
+  custom_image_models: string[]
 }>({
   enabled_models: [],
   disabled_models: [],
   default_user_models: [],
+  custom_chat_models: [],
+  custom_image_models: [],
 })
 const allModelsOptions = ref<string[]>([])
 const chatModelsOptions = ref<string[]>([])
 const imageModelsOptions = ref<string[]>([])
 const modelCatalogLoaded = ref(false)
 const modelCatalogSaving = ref(false)
+const modelCatalogRefreshing = ref(false)
+const customModelModal = ref(false)
+const customModelForm = ref({
+  name: '',
+  type: 'chat' as 'chat' | 'image',
+})
 const cpaForm = ref({
   name: '',
   base_url: '',
@@ -2306,6 +2443,8 @@ async function loadModelCatalog() {
       enabled_models: settings.enabled_models || [],
       disabled_models: settings.disabled_models || [],
       default_user_models: settings.default_user_models || [],
+      custom_chat_models: settings.custom_chat_models || [],
+      custom_image_models: settings.custom_image_models || [],
     }
     modelCatalogLoaded.value = true
   } catch (error: any) {
@@ -2320,17 +2459,96 @@ async function saveModelCatalog() {
       enabled_models: modelCatalogForm.value.enabled_models,
       disabled_models: modelCatalogForm.value.disabled_models,
       default_user_models: modelCatalogForm.value.default_user_models,
+      custom_chat_models: modelCatalogForm.value.custom_chat_models,
+      custom_image_models: modelCatalogForm.value.custom_image_models,
     })
     modelCatalogForm.value = {
       enabled_models: res.enabled_models || [],
       disabled_models: res.disabled_models || [],
       default_user_models: res.default_user_models || [],
+      custom_chat_models: res.custom_chat_models || [],
+      custom_image_models: res.custom_image_models || [],
     }
     toast.success('模型设置已保存')
   } catch (error: any) {
     toast.error(error.message || '保存模型设置失败')
   } finally {
     modelCatalogSaving.value = false
+  }
+}
+
+async function refreshModelCatalog() {
+  modelCatalogRefreshing.value = true
+  try {
+    // 重新获取全量模型列表
+    const catalog = await settingsApi.catalog()
+    allModelsOptions.value = catalog.all_models || []
+    chatModelsOptions.value = catalog.chat_models || []
+    imageModelsOptions.value = catalog.image_models || []
+
+    // 重新获取当前启用/禁用配置
+    const settings = await modelCatalogApi.get()
+    modelCatalogForm.value = {
+      enabled_models: settings.enabled_models || [],
+      disabled_models: settings.disabled_models || [],
+      default_user_models: settings.default_user_models || [],
+      custom_chat_models: settings.custom_chat_models || [],
+      custom_image_models: settings.custom_image_models || [],
+    }
+    toast.success('模型列表已刷新')
+  } catch (error: any) {
+    toast.error(error?.message || '刷新模型列表失败')
+  } finally {
+    modelCatalogRefreshing.value = false
+  }
+}
+
+function openCustomModelModal() {
+  customModelForm.value = {
+    name: '',
+    type: 'chat',
+  }
+  customModelModal.value = true
+}
+
+function closeCustomModelModal() {
+  customModelModal.value = false
+  customModelForm.value = {
+    name: '',
+    type: 'chat',
+  }
+}
+
+function submitCustomModel() {
+  const modelName = customModelForm.value.name.trim()
+  if (!modelName) {
+    toast.error('请输入模型名称')
+    return
+  }
+
+  const targetList = customModelForm.value.type === 'chat'
+    ? modelCatalogForm.value.custom_chat_models
+    : modelCatalogForm.value.custom_image_models
+
+  if (targetList.includes(modelName)) {
+    toast.error('该模型已存在')
+    return
+  }
+
+  targetList.push(modelName)
+  closeCustomModelModal()
+  toast.success(`已添加${customModelForm.value.type === 'chat' ? '对话' : '生图'}模型: ${modelName}`)
+}
+
+function removeCustomModel(modelName: string, type: 'chat' | 'image') {
+  const targetList = type === 'chat'
+    ? modelCatalogForm.value.custom_chat_models
+    : modelCatalogForm.value.custom_image_models
+
+  const idx = targetList.indexOf(modelName)
+  if (idx >= 0) {
+    targetList.splice(idx, 1)
+    toast.success(`已移除模型: ${modelName}`)
   }
 }
 

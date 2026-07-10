@@ -385,7 +385,7 @@ def _providers_list() -> list[dict[str, Any]]:
 def _test_provider_connection(base_url: str, api_key: str, proxy: str) -> dict[str, Any]:
     from curl_cffi import requests
 
-    url = f"{base_url.rstrip('/')}/v1/models"
+    url = f"{base_url.rstrip('/')}s"
     headers = {"Accept": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -420,7 +420,7 @@ def _test_provider_connection(base_url: str, api_key: str, proxy: str) -> dict[s
 def _fetch_provider_models(base_url: str, api_key: str, proxy: str) -> dict[str, Any]:
     from curl_cffi import requests
 
-    url = f"{base_url.rstrip('/')}/v1/models"
+    url = f"{base_url.rstrip('/')}s"
     headers = {"Accept": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"

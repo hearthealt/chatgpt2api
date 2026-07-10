@@ -443,12 +443,12 @@ export const settingsApi = {
 
 export const modelCatalogApi = {
   get: () =>
-    apiClient.get<never, { enabled_models: string[]; disabled_models: string[]; default_user_models: string[] }>(
+    apiClient.get<never, { enabled_models: string[]; disabled_models: string[]; default_user_models: string[]; custom_chat_models: string[]; custom_image_models: string[] }>(
       '/api/admin/model-catalog'
     ),
-  save: (data: { enabled_models?: string[]; disabled_models?: string[]; default_user_models?: string[] }) =>
+  save: (data: { enabled_models?: string[]; disabled_models?: string[]; default_user_models?: string[]; custom_chat_models?: string[]; custom_image_models?: string[] }) =>
     apiClient.post<
       typeof data,
-      { enabled_models: string[]; disabled_models: string[]; default_user_models: string[] }
+      { enabled_models: string[]; disabled_models: string[]; default_user_models: string[]; custom_chat_models: string[]; custom_image_models: string[] }
     >('/api/admin/model-catalog', data),
 }

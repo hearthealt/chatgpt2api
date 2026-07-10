@@ -319,6 +319,8 @@ DEFAULT_MODEL_CATALOG: dict[str, object] = {
     "enabled_models": [],
     "disabled_models": [],
     "default_user_models": [],
+    "custom_chat_models": [],
+    "custom_image_models": [],
 }
 
 _QUOTA_PERIODS = {"daily", "monthly", "total"}
@@ -359,12 +361,14 @@ def _normalize_user_access_settings(value: object) -> dict[str, object]:
 
 
 def _normalize_model_catalog_settings(value: object) -> dict[str, object]:
-    """规范化模型目录配置，coerce enabled_models/disabled_models/default_user_models 为 list[str]"""
+    """规范化模型目录配置，coerce enabled_models/disabled_models/default_user_models/custom_*_models 为 list[str]"""
     source = value if isinstance(value, dict) else {}
     return {
         "enabled_models": _normalize_str_list(source.get("enabled_models")),
         "disabled_models": _normalize_str_list(source.get("disabled_models")),
         "default_user_models": _normalize_str_list(source.get("default_user_models")),
+        "custom_chat_models": _normalize_str_list(source.get("custom_chat_models")),
+        "custom_image_models": _normalize_str_list(source.get("custom_image_models")),
     }
 
 

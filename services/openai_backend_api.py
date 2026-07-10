@@ -3225,7 +3225,7 @@ class OpenAIBackendAPI:
         return "/backend-anon/conversation", "America/Los_Angeles"
 
     def list_models(self) -> Dict[str, Any]:
-        """返回当前模式下可用模型，格式对齐 OpenAI `/v1/models`。"""
+        """返回当前模式下可用模型，格式对齐 OpenAI `s`。"""
         self._bootstrap()
         path = "/backend-api/models?history_and_training_disabled=false" if self.access_token else (
             "/backend-anon/models?iim=false&is_gizmo=false"

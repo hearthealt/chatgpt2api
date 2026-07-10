@@ -133,8 +133,15 @@ def get_model_catalog() -> dict[str, Any]:
     if provider_image_models:
         image_models = _unique([*image_models, *provider_image_models])
 
-    # 应用管理员启用/禁用过滤
+    # 追加自定义模型（管理员手动添加的模型）
     catalog_settings = config.get_model_catalog_settings()
+    custom_chat_models = catalog_settings.get("custom_chat_models") or []
+    custom_image_models = catalog_settings.get("custom_image_models") or []
+    if custom_chat_models:
+        chat_models = _unique([*chat_models, *custom_chat_models])
+    if custom_image_models:
+        image_models = _unique([*image_models, *custom_image_models])
+
     enabled_models = catalog_settings.get("enabled_models") or []
     disabled_models = catalog_settings.get("disabled_models") or []
 
@@ -160,5 +167,5 @@ def get_model_catalog() -> dict[str, Any]:
             "chat": chat_source,
             "image": image_source,
         },
-        "openai_models_endpoint": "/v1/models",
+        "openai_models_endpoint": "s",
     }

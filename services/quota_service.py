@@ -261,6 +261,10 @@ def check_model_access(identity: dict[str, object], model: str) -> None:
     - 用户有 allowed_models 白名单：model 必须在其中
     - 用户无 allowed_models 或为空：使用全局 model_catalog 的 enabled_models/disabled_models
     """
+    # "auto" 是占位符，会在后续解析为具体模型，这里跳过检查
+    if model == "auto":
+        return
+
     # admin 角色跳过
     if str(identity.get("role") or "").lower() == "admin":
         return
