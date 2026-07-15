@@ -19,6 +19,37 @@ from services.third_party_backend import ThirdPartyBackend, resolve_image_bytes
 from utils.image_tokens import count_image_output_items_tokens, image_usage
 
 
+def _parse_size_to_aspect_and_resolution(size: str | None) -> tuple[str | None, str | None]:
+    """将 size（如 1024x1024）转换为 aspect_ratio 和 resolution"""
+    if not size or size == "auto":
+        return None, None
+
+    # 解析尺寸
+    parts = size.lower().split('x')
+    if len(parts) != 2:
+        return None, None
+
+    try:
+        width = int(parts[0])
+        height = int(parts[1])
+    except (ValueError, TypeError):
+        return None, None
+
+    # 计算宽高比
+    from math import gcd
+    divisor = gcd(width, height)
+    aspect_ratio = f"{width // divisor}:{height // divisor}"
+
+    # 确定分辨率
+    max_edge = max(width, height)
+    if max_edge >= 1920:
+        resolution = "2k"
+    else:
+        resolution = "1k"
+
+    return aspect_ratio, resolution
+
+
 def third_party_image_generation(provider, body: dict[str, Any]) -> dict[str, Any]:
     model = str(body.get("model") or "").strip()
     prompt = str(body.get("prompt") or "").strip()
@@ -29,9 +60,29 @@ def third_party_image_generation(provider, body: dict[str, Any]) -> dict[str, An
     except (TypeError, ValueError):
         n = 1
     response_format = str(body.get("response_format") or "url").strip().lower()
+
+    # 优先使用直接传递的 aspect_ratio 和 resolution，否则从 size 解析
+    aspect_ratio = body.get("aspect_ratio")
+    resolution = body.get("resolution")
+    if not aspect_ratio or not resolution:
+        size = body.get("size")
+        parsed_aspect, parsed_resolution = _parse_size_to_aspect_and_resolution(size)
+        if not aspect_ratio:
+            aspect_ratio = parsed_aspect
+        if not resolution:
+            resolution = parsed_resolution
+
     base_url = str(body.get("base_url") or "").strip() or None
+
     with ThirdPartyBackend(provider) as backend:
-        urls = backend.image_via_chat(prompt, model, n=n)
+        urls = backend.image_generation(
+            prompt,
+            model,
+            n=n,
+            aspect_ratio=aspect_ratio,
+            resolution=resolution,
+            response_format=response_format,
+        )
     if not urls:
         raise HTTPException(status_code=502, detail={"error": "上游未返回图片 URL"})
 

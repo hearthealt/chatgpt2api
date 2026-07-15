@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.2 - 2026-07-15
+
++ [新增] 第三方图片生成接口支持：从 `/v1/chat/completions` 改为调用标准 `/v1/images/generations` 接口，支持 `aspect_ratio` 和 `resolution` 参数。
++ [新增] 图片生成参数解析：支持传统 `size` 参数（如 `1024x1024`）自动转换为 `aspect_ratio` 和 `resolution`，兼容标准 OpenAI 调用方式。
++ [优化] 第三方后端图片生成方法从 `image_via_chat()` 重构为 `image_generation()`，调用专用图片生成端点，提升稳定性。
++ [优化] 第三方后端透传参数支持：新增 `max_completion_tokens`（优先于 `max_tokens`）、`tools`、`tool_choice` 参数透传。
++ [优化] 前端画图页面：移除第三方模型的"比例"和"分辨率"选项限制，现在所有模型均可选择这些参数。
++ [优化] 图片生成响应解析：同时支持 `url` 和 `b64_json` 两种返回格式，兼容性更好。
+
 ## 2.1.1 - 2026-07-10
 
 + [修复] 提供商「拉取模型」「测试连接」URL 拼接错误：原逻辑仅在 base_url 末尾加字母 `s`，填写 `/v1` 会请求到 `/v1s` 导致「解析响应失败」。现兼容 base_url 是否带 `/v1`，统一拼出正确的 `/v1/models`。

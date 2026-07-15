@@ -164,7 +164,16 @@ class ThirdPartyBackend:
     def _payload(self, messages: list[dict[str, Any]], model: str, stream: bool, **kwargs: Any) -> dict[str, Any]:
         payload: dict[str, Any] = {"model": model, "messages": messages, "stream": stream}
         # 透传 OpenAI 兼容的可选参数。
-        for key in ("temperature", "top_p", "max_tokens", "presence_penalty", "frequency_penalty", "stop", "n"):
+        for key in ("temperature", "top_p", "presence_penalty", "frequency_penalty", "stop", "n"):
+            value = kwargs.get(key)
+            if value is not None:
+                payload[key] = value
+        # max_tokens 处理：优先使用 max_completion_tokens，兼容旧的 max_tokens
+        max_completion_tokens = kwargs.get("max_completion_tokens") or kwargs.get("max_tokens")
+        if max_completion_tokens is not None:
+            payload["max_completion_tokens"] = max_completion_tokens
+        # 透传工具相关参数
+        for key in ("tools", "tool_choice"):
             value = kwargs.get(key)
             if value is not None:
                 payload[key] = value
@@ -249,21 +258,41 @@ class ThirdPartyBackend:
                 })
                 continue
 
-    def image_via_chat(self, prompt: str, model: str, n: int = 1, **kwargs: Any) -> list[str]:
-        """用生图模型调用 /v1/chat/completions，解析返回的图片来源（URL 或 data:image base64）。"""
-        messages = [{"role": "user", "content": prompt}]
-        result = self.chat_completion(messages, model, **kwargs)
-        content = _first_message_content(result)
-        urls = extract_image_sources(content)
-        if n and n > 1 and len(urls) < n:
-            # 有的上游一次只返回一张，尝试重复调用补足。
-            for _ in range(n - len(urls)):
-                extra = self.chat_completion(messages, model, **kwargs)
-                for url in extract_image_sources(_first_message_content(extra)):
-                    if url not in urls:
-                        urls.append(url)
-                if len(urls) >= n:
-                    break
+    def image_generation(self, prompt: str, model: str, n: int = 1, **kwargs: Any) -> list[str]:
+        """调用 /v1/images/generations（标准图片生成接口），返回图片 URL 列表。"""
+        payload: dict[str, Any] = {
+            "model": model,
+            "prompt": prompt,
+        }
+        if n and n > 0:
+            payload["n"] = n
+        # 透传新增的图片生成参数
+        for key in ("aspect_ratio", "resolution", "response_format"):
+            value = kwargs.get(key)
+            if value is not None:
+                payload[key] = value
+
+        url = self._endpoint("images/generations")
+        response = self.session.post(url, json=payload, timeout=self.timeout)
+        ensure_ok(response, f"third_party[{self.provider.name}] image_generation")
+        result = response.json()
+
+        # 解析新格式：{"created": ..., "data": [{"url": "...", "mime_type": "..."}]}
+        data = result.get("data") if isinstance(result, dict) else None
+        if not isinstance(data, list):
+            return []
+
+        urls: list[str] = []
+        for item in data:
+            if isinstance(item, dict):
+                url = item.get("url")
+                if url and isinstance(url, str):
+                    urls.append(url)
+                # 也支持 b64_json 格式
+                b64 = item.get("b64_json")
+                if b64 and isinstance(b64, str):
+                    urls.append(f"data:image/jpeg;base64,{b64}")
+
         return urls[: n or 1] if n else urls
 
 

@@ -157,7 +157,7 @@
                       </button>
                     </div>
                   </div>
-                  <div v-if="!isThirdPartyImageModel" class="studio-size-section">
+                  <div class="studio-size-section">
                     <div class="studio-size-label">比例</div>
                     <div class="studio-choice-grid is-ratio">
                       <button
@@ -172,7 +172,7 @@
                       </button>
                     </div>
                   </div>
-                  <div v-if="!isThirdPartyImageModel" class="studio-size-section">
+                  <div class="studio-size-section">
                     <div class="studio-size-label">分辨率</div>
                     <div class="studio-choice-grid is-resolution">
                       <button
